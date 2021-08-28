@@ -1,0 +1,23 @@
+{
+  "name": "graphics",
+
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack",
+    "start": "webpack --watch --mode development",
+    "start:dev": "webpack-dev-server --watch"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "error-overlay-webpack-plugin": "^0.4.1",
+    "webpack": "^4.44.1",
+    "webpack-cli": "^3.3.12"
+  },
+  "dependencies": {
+    "webpack-dev-server": "^3.11.0"
+  }
+}
