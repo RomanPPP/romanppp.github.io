@@ -818,11 +818,11 @@ const m4 = __webpack_require__(/*! ./m4 */ "./src/m4.js")
 const {makeEntity} = __webpack_require__(/*! ./game/entity */ "./src/game/entity.js")
 const {box} = __webpack_require__(/*! ./game/objects */ "./src/game/objects.js")
 
-const cPos = [0,2,10]
+const cPos = [0,2,25]
 const cRot = [0,0,0]
 const controls = {
     ArrowDown : ()=> cRot[0] -= 0.1 ,
-    ArrowUp : () => cRot[0] +=0.1 ,
+    ArrowUp : () => cRot[0] += 0.1 ,
     ArrowLeft : () => cRot[1] += 0.1,
     ArrowRight : () => cRot[1] -=0.1 ,
     w : () => {
@@ -881,7 +881,7 @@ document.onmousedown = (e) =>{
         document.onmousemove = null
     }
 }
-const uniforms = { u_lightWorldPosition : [0,10,0]}
+const uniforms = { u_lightWorldPosition : [0,35,0], u_ambientLight : [0.2,0.2,0.3,1]}
 const {Simulation} = __webpack_require__(/*! ./server/simulation */ "./src/server/simulation.js")
 const sim = new Simulation()
 
@@ -890,6 +890,7 @@ const sim = new Simulation()
 const { Vector } = __webpack_require__(/*! ./server/vectors */ "./src/server/vectors.js")
 const objectsToDraw = []
 const floor = makeEntity(box)
+const floor2 = makeEntity(box)
 const wallN = makeEntity(box)
 const wallS = makeEntity(box)
 const wallW = makeEntity(box)
@@ -905,6 +906,13 @@ floor.physics.collider.max = new Vector(30,2,30)
 floor.renderNode.localMatrix = m4.scaling(60,4,60)
 floor.physics.setMass(100000000)
 
+floor2.updateObjectsToDraw()
+sim.addObject(floor2.physics)
+floor2.physics.collider.min = new Vector(-10,-10,-10)
+floor2.physics.collider.max = new Vector(10,10,10)
+floor2.renderNode.localMatrix = m4.scaling(20,20,20)
+floor2.physics.setMass(100000000)
+
 let entities = [wallN, wallE, wallW, wallS]
 entities.forEach(wall =>{
     wall.updateObjectsToDraw()
@@ -916,9 +924,13 @@ entities.forEach(wall =>{
     wall.physics.collider.max = new Vector(30,2,30)
     wall.renderNode.localMatrix = m4.scaling(60,4,60)
 })
-entities.push(floor)
+entities.push(floor, floor2)
 floor.physics.translate(0,-2,0)
 floor.physics.static = true
+floor2.physics.static = true
+
+floor2.physics.translate(10,0,0)
+floor2.physics.rotate(Math.PI/4,0,0)
 wallN.physics.translate(0,0,30)
 wallN.physics.rotate(Math.PI/2,0,0)
 
@@ -932,7 +944,7 @@ wallE.physics.translate(-30,0,0)
 wallE.physics.rotate(0,0, Math.PI/2)
 
 
-objectsToDraw.push(...floor.objectsToDraw)
+objectsToDraw.push(...floor.objectsToDraw, ...floor2.objectsToDraw)
 
 let cameraMatrix = m4.translation(...cPos)
 cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
@@ -941,7 +953,7 @@ cameraMatrix = m4.xRotate(cameraMatrix, cRot[0])
 
 
 
-controls['q'] = () =>{
+controls[' '] = () =>{
     const cube = makeEntity(box)
     cube.updateObjectsToDraw()
     entities.push(cube)
@@ -953,6 +965,7 @@ controls['q'] = () =>{
     
     let Rm = m4.yRotation(cRot[1])
     Rm = m4.xRotate(Rm, cRot[0])
+    
     const vel = m4.transformPoint(Rm, [0,0,-20])
     
     cube.physics.addVelocity(new Vector(...vel))
