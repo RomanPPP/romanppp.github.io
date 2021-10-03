@@ -13,6 +13,10 @@
   }
 </style>
 <!-- vertex shader -->
+<script id = "vertex_terrain" type="x-shader/x-vertex" >
+  attribute vec4 a_position;
+  
+</script>
 <script id="vertex-shader-3d" type="x-shader/x-vertex">
   attribute vec4 a_position;
   attribute vec3 a_normal;
@@ -20,15 +24,20 @@
   uniform mat4 u_matrix;
   uniform mat4 u_world;
   varying vec3 v_normal;
-  
-    
-   
+  uniform vec3 u_lightWorldPosition;
+  varying vec3 v_surfaceToLight;
+  uniform mat4 u_worldInverseTranspose;
     
   void main() {
-      
+
+      vec3 surfaceWorldPosition = (u_world * a_position).xyz;
       gl_Position = u_matrix * a_position;
     
-      v_normal  = mat3(u_world) *  a_normal;
+      v_normal  = mat3(u_worldInverseTranspose) *  a_normal;
+      
+ 
+  
+      v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;
       
   }
 </script>
@@ -36,26 +45,27 @@
 <!-- fragment shader -->
 <script  id="fragment-shader-3d" type="x-shader/x-fragment">
   precision mediump float;
-  uniform vec4 u_color;
-  varying vec3 v_normal;
+ 
+// Передаётся из вершинного шейдера
+varying vec3 v_normal;
+varying vec3 v_surfaceToLight;
+ 
 
-  uniform vec3 u_reverseLightDirection;
-
-  void main() {
-    vec3 normal = normalize(v_normal);
-    float light = dot(normal, u_reverseLightDirection);
-    gl_FragColor = u_color;  
-    gl_FragColor.rgb *= light;
-  }
-</script><!--
-for most samples webgl-utils only provides shader compiling/linking and
-canvas resizing because why clutter the examples with code that's the same in every sample.
-See https://webglfundamentals.org/webgl/lessons/webgl-boilerplate.html
-and https://webglfundamentals.org/webgl/lessons/webgl-resizing-the-canvas.html
-for webgl-utils, m3, m4, and webgl-lessons-ui.
--->
-
+uniform vec4 u_color;
+ 
+void main() {
+  vec3 normal = normalize(v_normal);
+ 
+  vec3 surfaceToLightDirection = normalize(v_surfaceToLight);
+ 
+ 
+  float light = dot(normal, surfaceToLightDirection);
+ 
+  gl_FragColor = u_color;
+ 
   
+  gl_FragColor.rgb *= light;
+}
 </script>
 <script>
   var canvas = document.querySelector("#canvas");

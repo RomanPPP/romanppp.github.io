@@ -305,6 +305,9 @@ const m4 = {
         
         return a
       },
+      dot(v1,v2){
+        return v1[0]*v2[0] + v1[1]*v2[1] + v1[2] * v2[2]
+      },
       isNullVector: function(v){
         
         return !v[0]&&!v[1]&&!v[2]
@@ -336,8 +339,8 @@ const m4 = {
         }
         return dst;
       },
-      identity: function(dst) {
-        dst = dst || new MatType(16);
+      identity: function() {
+        dst = new MatType(16);
         dst[ 0] = 1;
         dst[ 1] = 0;
         dst[ 2] = 0;
@@ -356,7 +359,51 @@ const m4 = {
         dst[15] = 1;
     
         return dst;
-      }
+      },
+      m3Tom4 : function(m){
+        const dst = new MatType(16)
+        dst[ 0] = m[0]
+        dst[ 1] = m[1]
+        dst[ 2] = m[2]
+        dst[ 3] = 0
+        dst[ 4] = m[3]
+        dst[ 5] = m[4]
+        dst[ 6] = m[5]
+        dst[ 7] = 0
+        dst[ 8] = m[6]
+        dst[ 9] = m[7]
+        dst[10] = m[8]
+        dst[11] = 0
+        dst[12] = 0
+        dst[13] = 0
+        dst[14] = 0
+        dst[15] = 1
+        return dst
+      },
+      m4Tom3 : function(m){
+        const dst = new MatType(9)
+        dst[ 0] = m[0]
+        dst[ 1] = m[1]
+        dst[ 2] = m[2]
+        dst[ 3] = m[4]
+        dst[ 4] = m[5]
+        dst[ 5] = m[6]
+        dst[ 6] = m[8]
+        dst[ 7] = m[9]
+        dst[ 8] = m[10]
+        return dst
+      },
+      toString(m){
+        return m.reduce((acc,el,idx) => (idx) % 4 === 0 ? acc += '\n' + el : acc += ' ' + el )
+      },
+      transpose: function(m) {
+        return [
+          m[0], m[4], m[8], m[12],
+          m[1], m[5], m[9], m[13],
+          m[2], m[6], m[10], m[14],
+          m[3], m[7], m[11], m[15],
+        ];
+      },
     };
     function makeZToWMatrix(fudgeFactor) {
       return [

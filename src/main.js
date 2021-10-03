@@ -1,16 +1,10 @@
-const {drawScene} = require('./render/render')
+const {drawScene, drawPoints, drawLines, resizeCanvasToDisplaySize} = require('./render/render')
 const m4 = require('./m4')
 
+const {makeEntity} = require('./game/entity')
+const {box} = require('./game/objects')
 
-const {makeRenderNode} = require('./render/model')
-const {man} = require('./render/basemodel')
-
-const model = makeRenderNode(man)
-let angle = 0
-model.updatePartsList()
-model.source.rotation[1] = Math.PI/2
-console.log(model.parts)
-const cPos = [0,0,10]
+const cPos = [0,2,10]
 const cRot = [0,0,0]
 const controls = {
     ArrowDown : ()=> cRot[0] -= 0.1 ,
@@ -44,36 +38,139 @@ const controls = {
         cPos[1] += delta[1]
         cPos[2] += delta[2]
         
-    },
-    l : () =>{
-        angle +=0.11
-        model.parts.forEach(part => {
-            
-            if(part.name === 'bone2') part.source.rotation[0] = Math.sin(angle)
-        })
+    }
+}
+const mouseControls = {
+    lastX : 0,
+    lastY : 0,
+    mousemove : function(e){
         
+        deltaX = e.offsetX - this.lastX 
+        this.lastX = e.offsetX
+        deltaY = e.offsetY -  this.lastY
+        this.lastY = e.offsetY
+        
+        cRot[1] -= deltaX*0.005
+        cRot[0] -= deltaY*0.005
     }
 }
 document.onkeydown = e =>{
     if(!controls[e.key]) return
     controls[e.key]()
 }
-let objectsToDraw = []
+document.onmousedown = (e) =>{
+    mouseControls.lastY = e.offsetY
+    mouseControls.lastX = e.offsetX
+    document.onmousemove = mouseControls.mousemove.bind(mouseControls)
+    document.onmouseup = ()=>{
+       
+        document.onmousemove = null
+    }
+}
+const uniforms = { u_lightWorldPosition : [0,10,0]}
+const {Simulation} = require('./server/simulation')
+const sim = new Simulation()
 
-  console.log(model)
-const uniforms = { u_reverseLightDirection : m4.normalize([0.5, 0.7, 1])}
-objectsToDraw.push(...model.parts.filter(node => node.sprite))
+
+
+const { Vector } = require('./server/vectors')
+const objectsToDraw = []
+const floor = makeEntity(box)
+const wallN = makeEntity(box)
+const wallS = makeEntity(box)
+const wallW = makeEntity(box)
+const wallE = makeEntity(box)
+
+
+floor.updateObjectsToDraw()
+sim.addObject(floor.physics)
+floor.physics.collider.min = new Vector(-30,-2,-30)
+floor.physics.collider.max = new Vector(30,2,30)
+
+
+floor.renderNode.localMatrix = m4.scaling(60,4,60)
+floor.physics.setMass(100000000)
+
+let entities = [wallN, wallE, wallW, wallS]
+entities.forEach(wall =>{
+    wall.updateObjectsToDraw()
+    objectsToDraw.push(...wall.objectsToDraw)
+    sim.addObject(wall.physics)
+    wall.physics.setMass(100000000)
+    wall.physics.static = true
+    wall.physics.collider.min = new Vector(-30,-2,-30)
+    wall.physics.collider.max = new Vector(30,2,30)
+    wall.renderNode.localMatrix = m4.scaling(60,4,60)
+})
+entities.push(floor)
+floor.physics.translate(0,-2,0)
+floor.physics.static = true
+wallN.physics.translate(0,0,30)
+wallN.physics.rotate(Math.PI/2,0,0)
+
+wallS.physics.translate(0,0,-30)
+wallS.physics.rotate(Math.PI/2,0,0)
+
+wallW.physics.translate(30,0,0)
+wallW.physics.rotate(0,0, Math.PI/2)
+
+wallE.physics.translate(-30,0,0)
+wallE.physics.rotate(0,0, Math.PI/2)
+
+
+objectsToDraw.push(...floor.objectsToDraw)
+
+let cameraMatrix = m4.translation(...cPos)
+cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
+cameraMatrix = m4.xRotate(cameraMatrix, cRot[0])
+
+
+
+
+controls['q'] = () =>{
+    const cube = makeEntity(box)
+    cube.updateObjectsToDraw()
+    entities.push(cube)
+    objectsToDraw.push(...cube.objectsToDraw)
+    sim.addObject(cube.physics)
+    
+    cube.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+    cube.physics.translate(...cPos)
+    
+    let Rm = m4.yRotation(cRot[1])
+    Rm = m4.xRotate(Rm, cRot[0])
+    const vel = m4.transformPoint(Rm, [0,0,-20])
+    
+    cube.physics.addVelocity(new Vector(...vel))
+    cube.physics.addAcceleration(new Vector(0,-9.8,0))
+    
+
+}
+ 
+resizeCanvasToDisplaySize(gl.canvas, 1)
+
 const loop = () =>{
-    model.updateWorldMatrix()
-    let cameraMatrix = m4.translation(...cPos)
+    
+   
+    
+    entities.forEach(entity => entity.updateWorldMatrix())
+    sim.tick(0.016)
+    cameraMatrix = m4.translation(...cPos)
     cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
     cameraMatrix = m4.xRotate(cameraMatrix, cRot[0])
     
-    
-   
-
+    const manifolds = sim.collisionManifolds.values()
+    const cols = []
+    for(let manifold of manifolds)cols.push(...manifold.contacts)
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.CULL_FACE)
+    gl.enable(gl.DEPTH_TEST)
     drawScene(objectsToDraw, cameraMatrix, uniforms)
+   
     requestAnimationFrame(loop)
 
+
 }
+
 loop()

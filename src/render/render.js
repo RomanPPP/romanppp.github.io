@@ -12,35 +12,22 @@ function resizeCanvasToDisplaySize(canvas, multiplier) {
   return false;
 }
 
-function computeMatrix(viewProjectionMatrix, translation,rotation,scale) {
-  let matrix = m4.translate(viewProjectionMatrix,
-      ...translation);
-  matrix = m4.xRotate(matrix,rotation[0]);
-  matrix = m4.yRotate(matrix,rotation[1]);
-  matrix = m4.zRotate(matrix, rotation[2]);
-  if(scale){
-    matrix = m4.scale(matrix,...scale)
-  }
   
-  return matrix
-}
-    var worldMatrix = m4.yRotation(Math.PI);
-    let ambientLight = m4.normalize([1, 0.6, 0.6])
+ 
     function degToRad(d) {
         return d * Math.PI / 180;
     }
     var fieldOfViewRadians = degToRad(90);
-function drawScene(objectsToDraw,cameraMatrix, globalUniforms) {
-        resizeCanvasToDisplaySize(canvas, 1)
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        gl.enable(gl.CULL_FACE)
-        gl.enable(gl.DEPTH_TEST)
+
+const zNear = 0.01;
+const zFar = 2000;
+var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+const projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar)
+
+function drawScene(objectsToDraw,cameraMatrix, globalUniforms, type) {
         
-        var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-        var zNear = 1;
-        var zFar = 2000;
-        var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar)
+        
+        
         
         var viewMatrix = m4.inverse(cameraMatrix)
         var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix)
@@ -49,8 +36,8 @@ function drawScene(objectsToDraw,cameraMatrix, globalUniforms) {
         let lastUsedBufferInfo = null
         
         for(let i = 0, n = objectsToDraw.length; i < n; ++i){
-          const node = objectsToDraw[i]
-          const sprite = node.sprite
+          const object = objectsToDraw[i]
+          const sprite = object.sprite
           if(lastUsedBufferInfo != sprite.buffersInfo){
             lastUsedBufferInfo = sprite.buffersInfo
           }
@@ -60,14 +47,102 @@ function drawScene(objectsToDraw,cameraMatrix, globalUniforms) {
           }
           
    
-          sprite.uniforms.u_matrix = m4.multiply(viewProjectionMatrix,node.worldMatrix)
+          sprite.uniforms.u_matrix = m4.multiply(viewProjectionMatrix, object.worldMatrix)
           
-          sprite.uniforms.u_world =  node.source.getRMatrix()
+          sprite.uniforms.u_world =  object.worldMatrix
+          sprite.uniforms.u_worldInverseTranspose = m4.transpose(m4.inverse(object.worldMatrix))
           lastUsedProgramInfo.setAttributes(lastUsedBufferInfo)
           lastUsedProgramInfo.setUniforms( sprite.uniforms)
-          lastUsedProgramInfo.setUniforms(globalUniforms)
-          gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0) 
+          if(globalUniforms)lastUsedProgramInfo.setUniforms(globalUniforms)
+          gl.drawElements(gl.TRIANGLES, sprite.buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
         } 
       }
-module.exports = {drawScene}
+
+const pointvs =
+      'uniform mat4 u_matrix;' +
+      
+      'void main(void) {' +
+         'gl_Position = u_matrix * vec4(0.0,0.0,0.0,1.0);' +
+         'gl_PointSize = 1.0;'+
+      '}';
+const defaultFs =
+      'precision mediump float;' +
+      'uniform vec4 u_color;' +
+      'void main(void) {' +
+         ' gl_FragColor = u_color;' +
+      '}';
+      
+      const {createBuffersInfo,ProgrammInfo} = require('./programm')
+      
+const pointGeometry = {position : new Float32Array(0.0,0.0,0.0)}
+const pointBuffersInfo = createBuffersInfo(gl,pointGeometry)
+const pointProgrammInfo = new ProgrammInfo(gl, pointvs, defaultFs)
+
+
+
+
+const planePoints = {position : new Float32Array([
+  -100.0,  0.0, -100.0,
+  -100.0,  0.0,  100.0,
+   100.0,  0.0,  100.0,
+   100.0,  0.0, -100.0]),
+  indices : new Uint16Array([0,  1,  2,      0,  2,  3])}
+const planeVs = 
+  'uniform mat4 u_matrix;' +
+  'attribute vec4 a_position;'+      
+  'void main(void) {' +
+    'gl_Position = u_matrix * a_position;' +
+    'gl_PointSize = 10.0;'+
+  '}';
+
+const planeProgrammInfo = new ProgrammInfo(gl, planeVs, defaultFs)
+const planeBuffersInfo = createBuffersInfo(gl, planePoints)
+
+function simpleDraw(programInfo, buffersInfo, type, numElements, list, u_color, cameraMatrix){
+  
+  
+      
+      gl.useProgram(programInfo.prg)
+      programInfo.setAttributes(buffersInfo)
+      let viewProjectionMatrix
+      if(cameraMatrix)viewProjectionMatrix = m4.multiply(projectionMatrix, m4.inverse(cameraMatrix))
+      else viewProjectionMatrix = m4.identity()
+      list.forEach(element =>{
+        const mat = element
+        const u_matrix = m4.multiply(viewProjectionMatrix,mat)
+        programInfo.setUniforms({u_matrix, u_color : u_color})
+        
+        gl.drawElements(type, numElements || buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
+    })
+  }
+
+
+
+const lineIndices = new Uint16Array([0,1])
+const lineVs = 
+  'uniform mat4 u_matrix;' +
+  'attribute vec4 a_position;'+      
+  'void main(void) {' +
+    'gl_Position = u_matrix * a_position;' +
+    
+  '}';
+
+const lineProgramInfo = new ProgrammInfo(gl, lineVs,defaultFs)
+
+
+const drawPoints = simpleDraw.bind(null, pointProgrammInfo, pointBuffersInfo, gl.POINT,3 )
+const drawPlanes = simpleDraw.bind(null,planeProgrammInfo, planeBuffersInfo, gl.TRIANGLES, 6)
+const drawLines = function(lines, color, cameraMatrix){
+    lines.forEach(line =>{
+      const lineGeometry =  {position : new Float32Array([...line[0], ...line[1]]),
+                            }
+      
+      const lineBuffersInfo = createBuffersInfo(gl,lineGeometry)
+      
+      simpleDraw(lineProgramInfo, lineBuffersInfo, gl.LINES,2, [m4.identity()], color, cameraMatrix)
+    })
+}
+
+
+module.exports = {drawScene, drawPoints, drawPlanes, drawLines, resizeCanvasToDisplaySize}
 

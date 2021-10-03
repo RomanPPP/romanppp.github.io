@@ -56,7 +56,6 @@ class Node{
         if (parentWorldMatrix) {
           matrix = m4.multiply(parentWorldMatrix, matrix);
         }
-        
         this.worldMatrix = m4.multiply(matrix, this.localMatrix)
         this.children.forEach((child) => {
           child.updateWorldMatrix([...matrix]);
@@ -68,6 +67,10 @@ class Node{
             node.children.forEach(child => iter(child,arr))
         }
         iter(this, this.parts)
+    }
+    traversal(func){
+      func(this)
+      this.children.forEach(child => child.traversal(func))
     }
     
     

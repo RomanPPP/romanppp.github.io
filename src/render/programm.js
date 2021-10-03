@@ -191,7 +191,7 @@ function createBuffersInfo(gl,arrays){
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer)
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, arrays.indices,gl.STATIC_DRAW)
         buffersInfo.indices = buffer
-        buffersInfo.numElements = 36
+        buffersInfo.numElements = arrays.indices.length
         return buffersInfo
     }
     buffersInfo.numElements = arrays.position.length / 3

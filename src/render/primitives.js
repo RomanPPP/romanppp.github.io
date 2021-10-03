@@ -51,17 +51,13 @@ function createBoxGeometry(_a = 1, _b = 1, _c = 1){
         for (let v = 0; v < 4; ++v) {
           const position = cornerVertices[faceIndices[v]];
           const normal = faceNormals[f];
-          //const uv = uvCoords[v];
-  
-          // Each face needs all four vertices because the normals and texture
-          // coordinates are not all the same.
           positions.push(position)
           normals.push(normal)
           
-          //texCoords.push(uv);
+          
   
         }
-        // Two triangles make a square face.
+        
         const offset = 4 * f;
         indices.push(offset + 0, offset + 1, offset + 2);
         indices.push(offset + 0, offset + 2, offset + 3);
@@ -94,21 +90,26 @@ function createBoxGeometry(_a = 1, _b = 1, _c = 1){
     for (let j = 0; j < facesSize; ++j) {
       const position = v[faceIndices[j] - 1];
       const normal = vn[i];
-      //const uv = uvCoords[v];
-
-      // Each face needs all four vertices because the normals and texture
-      // coordinates are not all the same.
+    
       positions.push(position)
       //normals.push(normal)
       
       //texCoords.push(uv);
 
     }
-    // Two triangles make a square face.
+    
     const offset = 4 * i;
     indices.push(offset + 0, offset + 1, offset + 2);
     indices.push(offset + 0, offset + 2, offset + 3);
   } 
   return {position : positions, normal : normals, indices}
 }
-module.exports = {createBoxGeometry, createGeometry}
+
+const linedBoxIndices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, //front
+  0, 5, 5, 4, 4, 1, 1, 0, //bottom
+  0, 4, 4, 7, 7, 3, 3, 0, //left
+  1, 2, 2, 6, 6, 5, 5, 1, //right
+  4, 5, 5, 6, 6, 7, 7, 4, // back
+  2, 7, 7, 3, 3, 6, 6, 2 // top 
+])
+module.exports = {createBoxGeometry, createGeometry, linedBoxIndices}
