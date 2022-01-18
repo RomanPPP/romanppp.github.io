@@ -1,9 +1,9 @@
 
-const {createBoxGeometry, linedBoxIndices} = require('./primitives')
+const {LinedBoxGeometry, createBoxGeometry} = require('./primitives')
 const {createBuffersInfo,ProgrammInfo} = require('./programm')
 const m4 = require('../m4')
-const geometry = createBoxGeometry()
-//geometry.indices = linedBoxIndices
+const geometry = LinedBoxGeometry()
+
 const buffersInfo = createBuffersInfo(gl,geometry)
 const vs = document.getElementById('vertex-shader-3d').text
 const fs = document.getElementById('fragment-shader-3d').text
@@ -13,6 +13,7 @@ function Box(size,color = [0.5,0.5,0.5,1]){
         buffersInfo,
         programmInfo,
         sizeMatrix : m4.scaling( ...size),
+        
         uniforms : {
             u_color : color,
             u_matrix : null,
@@ -24,6 +25,7 @@ class BoxSprite{
     constructor(color = [0.5,0.5,0.5,1]){
         this.buffersInfo = buffersInfo
         this.programmInfo = programmInfo
+        this.type = gl.LINES
         this.uniforms = {
             u_color : color,
             u_matrix : null,

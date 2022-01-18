@@ -54,7 +54,7 @@ function drawScene(objectsToDraw,cameraMatrix, globalUniforms, type) {
           lastUsedProgramInfo.setAttributes(lastUsedBufferInfo)
           lastUsedProgramInfo.setUniforms( sprite.uniforms)
           if(globalUniforms)lastUsedProgramInfo.setUniforms(globalUniforms)
-          gl.drawElements(gl.TRIANGLES, sprite.buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
+          gl.drawElements(sprite.type, sprite.buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
         } 
       }
 
@@ -63,7 +63,7 @@ const pointvs =
       
       'void main(void) {' +
          'gl_Position = u_matrix * vec4(0.0,0.0,0.0,1.0);' +
-         'gl_PointSize = 1.0;'+
+         'gl_PointSize = 10.0;'+
       '}';
 const defaultFs =
       'precision mediump float;' +
@@ -100,7 +100,7 @@ const planeBuffersInfo = createBuffersInfo(gl, planePoints)
 
 function simpleDraw(programInfo, buffersInfo, type, numElements, list, u_color, cameraMatrix){
   
-  
+    
       
       gl.useProgram(programInfo.prg)
       programInfo.setAttributes(buffersInfo)
@@ -142,7 +142,42 @@ const drawLines = function(lines, color, cameraMatrix){
       simpleDraw(lineProgramInfo, lineBuffersInfo, gl.LINES,2, [m4.identity()], color, cameraMatrix)
     })
 }
+const aabbBI = (min, max) =>{
+  const geometry = { position : new Float32Array([
+    min[0], min[1], min[2],
+    min[0], min[1], max[2],
+    min[0], max[1], max[2],
+    min[0], max[1], min[2],
 
-
-module.exports = {drawScene, drawPoints, drawPlanes, drawLines, resizeCanvasToDisplaySize}
+    max[0], max[1], max[2],
+    max[0], max[1], min[2],
+    max[0], min[0], min[2],
+    max[0], min[0], max[2]
+  ]),
+  indices : new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, // front
+    0, 5, 5, 4, 4, 1, 1, 0, //bottom
+    0, 4, 4, 7, 7, 3, 3, 0, //left
+    1, 2, 2, 6, 6, 5, 5, 1, //right
+    4, 5, 5, 6, 6, 7, 7, 4, // back
+    2, 7, 7, 3, 3, 6, 6, 2 // top 
+  ])
+  }
+  return createBuffersInfo(gl, geometry)
+}
+const drawAAbbs = (aabbs, u_color, cameraMatrix) =>{
+  gl.useProgram(lineProgramInfo.prg)
+  
+  let viewProjectionMatrix
+  if(cameraMatrix)viewProjectionMatrix = m4.multiply(projectionMatrix, m4.inverse(cameraMatrix))
+  else viewProjectionMatrix = m4.identity()
+  aabbs.forEach(aabb =>{
+    const buffersInfo = aabbBI(aabb.min, aabb.max)
+    lineProgramInfo.setAttributes(buffersInfo)
+    const u_matrix = m4.multiply(viewProjectionMatrix,m4.identity())
+    lineProgramInfo.setUniforms({u_matrix, u_color })
+    
+    gl.drawElements(gl.LINES, buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
+})
+}
+module.exports = {drawScene, drawPoints, drawPlanes, drawLines, resizeCanvasToDisplaySize, drawAAbbs}
 

@@ -1,28 +1,34 @@
 
 
-const {Vector} = require('./vectors')
+const {Vector} = require('./vector')
+const {AABB} = require('./aabb')
 const getBoundAabb = (aabb1, aabb2)=>{
     if(!aabb1 || !aabb2){
         return 0
     }
-    const x1 = aabb1[0].x < aabb2[0].x ? aabb1[0].x : aabb2[0].x
-    const x2 = aabb1[1].x > aabb2[1].x ? aabb1[1].x : aabb2[1].x
-    const y1 = aabb1[0].y < aabb2[0].y ? aabb1[0].y : aabb2[0].y
-    const y2 = aabb1[1].y > aabb2[1].y ? aabb1[1].y : aabb2[1].y
-    const z1 = aabb1[0].z < aabb2[0].z ? aabb1[0].z : aabb2[0].z
-    const z2 = aabb1[1].z > aabb2[1].z ? aabb1[1].z : aabb2[1].z
-    return [new Vector(x1 , y1,z1), new Vector(x2, y2, z2)]
+    const x1 = aabb1.min[0] < aabb2.min[0] ? aabb1.min[0] : aabb2.min[0]
+    const x2 = aabb1.max[0] > aabb2.max[0] ? aabb1.max[0] : aabb2.max[0]
+    const y1 = aabb1.min[1] < aabb2.min[1] ? aabb1.min[1] : aabb2.min[1]
+    const y2 = aabb1.max[1] > aabb2.max[1] ? aabb1.max[1] : aabb2.max[1]
+    const z1 = aabb1.min[2] < aabb2.min[2] ? aabb1.min[2] : aabb2.min[2]
+    const z2 = aabb1.max[2] > aabb2.max[2] ? aabb1.max[2] : aabb2.max[2]
+    return new AABB([x1, y1, z1], [x2, y2, z2])
 }
 const isCollide = (aabb1,aabb2) => {
-      
-    if(aabb1[0].x <= aabb2[1].x && aabb1[1].x >= aabb2[0].x && aabb1[0].y <= aabb2[1].y && aabb1[1].y >= aabb2[0].y && aabb1[0].z <= aabb2[1].z && aabb1[1].z >= aabb2[0].z){
+    if(aabb1.min[0] <= aabb2.max[0]
+    && aabb1.max[0] >= aabb2.min[0]
+    && aabb1.min[1] <= aabb2.max[1] 
+    && aabb1.max[1] >= aabb2.min[1] 
+    && aabb1.min[2] <= aabb2.max[2] 
+    && aabb1.max[2] >= aabb2.min[2])  
+    {
         return true
     }
     return false
 }
 const getSize = (aabb) => {
-    const area = Math.abs(aabb[1].x - aabb[0].x) + Math.abs(aabb[1].y - aabb[0].y) + Math.abs(aabb[1].z - aabb[0].z)
-    return area > 0 ? area : - area
+    const area = Math.abs(aabb.max[0] - aabb.min[0]) * Math.abs(aabb.max[1] - aabb.min[1]) * Math.abs(aabb.max[2] - aabb.min[2])
+    return area 
 }
 class Node{
     constructor(aabb,isLeaf,gameObject){
@@ -184,6 +190,7 @@ class Tree{
         }
     }
     rebalance(leaf){
+       
         if(!leaf){
             return null
         }
@@ -289,6 +296,16 @@ class Tree{
             return h1 > h2 ? h1 : h2
         }
         return iter(leaf,1)
+    }
+    getNodes(){
+        const iter = (node, arr) =>{
+            arr.push(node)
+            if(node.child1) iter(node.child1, arr)
+            if(node.child2) iter(node.child2, arr)
+        }
+        const a = []
+        iter(this.root, a)
+        return a
     }
     
 }

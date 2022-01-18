@@ -1,6 +1,6 @@
 
 const {Node, TRS } = require('../node')
-const {Physics} = require('../server/physics')
+const {Physics, Player} = require('../server/physics')
 const {Box} = require('../server/collider')
 const {makeRenderNode} = require('../render/model')
 const {cube} = require('../render/basemodel')
@@ -8,6 +8,9 @@ const m4 = require('../m4')
 const PartsMap = {
     box : function(x,y,z){
         return new Physics(new Box(x,y,z))
+    },
+    player : function() {
+        return new Player( new Box())
     }
 }
 const modelMap = {

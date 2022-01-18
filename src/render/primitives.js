@@ -105,11 +105,18 @@ function createBoxGeometry(_a = 1, _b = 1, _c = 1){
   return {position : positions, normal : normals, indices}
 }
 
-const linedBoxIndices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, //front
+const linedBoxIndices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, // front
   0, 5, 5, 4, 4, 1, 1, 0, //bottom
   0, 4, 4, 7, 7, 3, 3, 0, //left
   1, 2, 2, 6, 6, 5, 5, 1, //right
   4, 5, 5, 6, 6, 7, 7, 4, // back
   2, 7, 7, 3, 3, 6, 6, 2 // top 
 ])
-module.exports = {createBoxGeometry, createGeometry, linedBoxIndices}
+const LinedBoxGeometry = (a = 1, b = 1, c = 1) =>{
+  const geometry = createBoxGeometry(a, b, c)
+  geometry.indices = linedBoxIndices
+  return geometry
+}
+
+
+module.exports = {createBoxGeometry , LinedBoxGeometry,  createGeometry, linedBoxIndices}

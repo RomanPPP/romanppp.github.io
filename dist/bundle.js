@@ -95,7 +95,7 @@
 
 
 const {Node, TRS } = __webpack_require__(/*! ../node */ "./src/node.js")
-const {Physics} = __webpack_require__(/*! ../server/physics */ "./src/server/physics.js")
+const {Physics, Player} = __webpack_require__(/*! ../server/physics */ "./src/server/physics.js")
 const {Box} = __webpack_require__(/*! ../server/collider */ "./src/server/collider.js")
 const {makeRenderNode} = __webpack_require__(/*! ../render/model */ "./src/render/model.js")
 const {cube} = __webpack_require__(/*! ../render/basemodel */ "./src/render/basemodel.js")
@@ -103,6 +103,9 @@ const m4 = __webpack_require__(/*! ../m4 */ "./src/m4.js")
 const PartsMap = {
     box : function(x,y,z){
         return new Physics(new Box(x,y,z))
+    },
+    player : function() {
+        return new Player( new Box())
     }
 }
 const modelMap = {
@@ -192,8 +195,22 @@ const box = {
     },
     
 }
+const player = {
+    translation : [0,0,0],
+    rotation :  [0,0,0],
+    scale : [1,1,1],
+    physics : {
+        name : 'player',
+        props : [1,1,1]
+    },
+    model : {
+        name : 'box',
+        props : []
+    },
+    
+}
 
-module.exports = {box}
+module.exports = {box, player}
 
 /***/ }),
 
@@ -814,11 +831,14 @@ module.exports = m4
 
 const {drawScene, drawPoints, drawLines, resizeCanvasToDisplaySize} = __webpack_require__(/*! ./render/render */ "./src/render/render.js")
 const m4 = __webpack_require__(/*! ./m4 */ "./src/m4.js")
-
+const {sum, diff, scale} = __webpack_require__(/*! ./server/vector */ "./src/server/vector.js")
 const {makeEntity} = __webpack_require__(/*! ./game/entity */ "./src/game/entity.js")
-const {box} = __webpack_require__(/*! ./game/objects */ "./src/game/objects.js")
-
-const cPos = [0,2,25]
+const {box, player} = __webpack_require__(/*! ./game/objects */ "./src/game/objects.js")
+const {BoxSprite} = __webpack_require__(/*! ./render/sprites */ "./src/render/sprites.js")
+const AABBsprite = new BoxSprite()
+const bbox = {sprite : AABBsprite, worldMatrix : m4.identity()}
+const {Joint} = __webpack_require__(/*! ./server/contact */ "./src/server/contact.js")
+const cPos = [0,2,5]
 const cRot = [0,0,0]
 const controls = {
     ArrowDown : ()=> cRot[0] -= 0.1 ,
@@ -887,64 +907,31 @@ const sim = new Simulation()
 
 
 
-const { Vector } = __webpack_require__(/*! ./server/vectors */ "./src/server/vectors.js")
+
+const { Box } = __webpack_require__(/*! ./server/collider */ "./src/server/collider.js")
+const { AABB } = __webpack_require__(/*! ./server/aabb */ "./src/server/aabb.js")
 const objectsToDraw = []
 const floor = makeEntity(box)
-const floor2 = makeEntity(box)
-const wallN = makeEntity(box)
-const wallS = makeEntity(box)
-const wallW = makeEntity(box)
-const wallE = makeEntity(box)
 
 
 floor.updateObjectsToDraw()
 sim.addObject(floor.physics)
-floor.physics.collider.min = new Vector(-30,-2,-30)
-floor.physics.collider.max = new Vector(30,2,30)
+floor.physics.collider.min = [-30, -2, -30]
+floor.physics.collider.max = [30,2,30]
 
 
 floor.renderNode.localMatrix = m4.scaling(60,4,60)
-floor.physics.setMass(100000000)
-
-floor2.updateObjectsToDraw()
-sim.addObject(floor2.physics)
-floor2.physics.collider.min = new Vector(-10,-10,-10)
-floor2.physics.collider.max = new Vector(10,10,10)
-floor2.renderNode.localMatrix = m4.scaling(20,20,20)
-floor2.physics.setMass(100000000)
-
-let entities = [wallN, wallE, wallW, wallS]
-entities.forEach(wall =>{
-    wall.updateObjectsToDraw()
-    objectsToDraw.push(...wall.objectsToDraw)
-    sim.addObject(wall.physics)
-    wall.physics.setMass(100000000)
-    wall.physics.static = true
-    wall.physics.collider.min = new Vector(-30,-2,-30)
-    wall.physics.collider.max = new Vector(30,2,30)
-    wall.renderNode.localMatrix = m4.scaling(60,4,60)
-})
-entities.push(floor, floor2)
-floor.physics.translate(0,-2,0)
-floor.physics.static = true
-floor2.physics.static = true
-
-floor2.physics.translate(10,0,0)
-floor2.physics.rotate(Math.PI/4,0,0)
-wallN.physics.translate(0,0,30)
-wallN.physics.rotate(Math.PI/2,0,0)
-
-wallS.physics.translate(0,0,-30)
-wallS.physics.rotate(Math.PI/2,0,0)
-
-wallW.physics.translate(30,0,0)
-wallW.physics.rotate(0,0, Math.PI/2)
-
-wallE.physics.translate(-30,0,0)
-wallE.physics.rotate(0,0, Math.PI/2)
+floor.physics.setMass(100000000000)
 
 
-objectsToDraw.push(...floor.objectsToDraw, ...floor2.objectsToDraw)
+
+let entities = []
+
+entities.push(floor)
+floor.physics.translate([0,-2,0])
+floor.physics.rotate([0.0,0,0])
+
+objectsToDraw.push(...floor.objectsToDraw,)
 
 let cameraMatrix = m4.translation(...cPos)
 cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
@@ -961,40 +948,130 @@ controls[' '] = () =>{
     sim.addObject(cube.physics)
     
     cube.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
-    cube.physics.translate(...cPos)
+    cube.physics.translate(cPos)
     
     let Rm = m4.yRotation(cRot[1])
     Rm = m4.xRotate(Rm, cRot[0])
     
     const vel = m4.transformPoint(Rm, [0,0,-20])
     
-    cube.physics.addVelocity(new Vector(...vel))
-    cube.physics.addAcceleration(new Vector(0,-9.8,0))
-    
+    cube.physics.addVelocity(vel)
+    cube.physics.addAcceleration([0, -9.8, 0])
+    console.log(cube)
 
 }
- 
-resizeCanvasToDisplaySize(gl.canvas, 1)
+for(let i = 0; i < 0;i++){
+    const cube = makeEntity(box)
+    cube.updateObjectsToDraw()
+    entities.push(cube)
+    objectsToDraw.push(...cube.objectsToDraw)
+    sim.addObject(cube.physics)
+    cube.physics.collider.min = [-3, -2, -3]
+    cube.physics.collider.max = [3, 2, 3]
+    cube.renderNode.localMatrix = m4.scaling(6,4,6)
+    cube.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+    cube.physics.translate([0,4 + i * 4,0])
+    cube.physics.addAcceleration([0, -9.8, 0])
+    cube.physics.rotate([0.5, 0.5, 0])
+    console.log(cube)
+}
+const Player = makeEntity(player)
+Player.updateObjectsToDraw()
+entities.push(Player)
+objectsToDraw.push(...Player.objectsToDraw)
+sim.addObject(Player.physics)
+Player.physics.collider.min = [-1, -2, -1]
+Player.physics.collider.max = [1, 2, 1]
+Player.renderNode.localMatrix = m4.scaling(2,4,2)
+Player.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+Player.physics.translate([0,4 + 2 * 4,0])
+Player.physics.addAcceleration([0, -9.8, 0])
 
-const loop = () =>{
+
+
+for(let i = 0; i < 2;i++){
+    const cube = makeEntity(box)
+    cube.updateObjectsToDraw()
+    cube.physics.collider.min = [-0.5, -2, -0.5]
+    cube.physics.collider.max = [0.5, 2, 0.5]
+    cube.renderNode.localMatrix = m4.scaling(1,4,1)
+    entities.push(cube)
+    objectsToDraw.push(...cube.objectsToDraw)
+    sim.addObject(cube.physics)
+    cube.physics.translate([0, i * 4.5 + 4, 0])
+    cube.physics.addAcceleration([0, -9.8, 0])
+    
+    sim.constrains.push(new Joint([ (-1)**(i %2 )*2, 0, 0], [0, 2, 0], Player.physics, cube.physics))
+    //sim.constrains.push(new Joint([ (-1)**(i %2 )*2, -4, 0], [0, -2, 0], Player.physics, cube.physics))
+}
+    //sim.constrains.push(new Joint([0,5,0], [0,14,0], Player.physics, floor.physics))
+    //cube.physics.rotate(1,2,0)
+   
+
+    /*const cube2 = makeEntity(box)
+    cube2.updateObjectsToDraw()
+    entities.push(cube2)
+    objectsToDraw.push(...cube2.objectsToDraw)*/
+    //sim.addObject(cube2.physics)
+    //cube2.physics.setMass(1000)
+    //cube2.physics.collider.min = new Vector(-0.1,-0.1,-0.1)
+    //cube2.physics.collider.max = new Vector(0.1,0.1,0.1)
+    //cube2.renderNode.localMatrix = m4.scaling(0.2,0.2,0.2)
+    
+    //cube2.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+    //cube2.physics.translate([0,10,0])
+    
+    //cube2.physics.setMass(10)
+    //cube2.physics.addAcceleration([0, -9.8, 0])
+resizeCanvasToDisplaySize(gl.canvas, 1)
+controls['p'] = () => {
+    sim.tick(0.015)
     
    
+}
+const loop = () =>{
+    
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.CULL_FACE)
+    gl.enable(gl.DEPTH_TEST)
     
     entities.forEach(entity => entity.updateWorldMatrix())
     sim.tick(0.016)
+
+    
     cameraMatrix = m4.translation(...cPos)
     cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
     cameraMatrix = m4.xRotate(cameraMatrix, cRot[0])
     
     const manifolds = sim.collisionManifolds.values()
     const cols = []
+    
     for(let manifold of manifolds)cols.push(...manifold.contacts)
+    
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.CULL_FACE)
-    gl.enable(gl.DEPTH_TEST)
+    
     drawScene(objectsToDraw, cameraMatrix, uniforms)
-   
+
+    
+    
+    /*sim.bvh.getNodes().forEach(node => {
+        
+        const tr = scale(sum(node.aabb.min, node.aabb.max),0.5)
+        const scaling = diff(node.aabb.max, node.aabb.min)
+        bbox.worldMatrix = m4.scale(m4.translation(...tr), ...scaling)
+        drawScene([bbox], cameraMatrix, uniforms)
+        drawPoints([m4.translation(...node.aabb.min), m4.translation(...node.aabb.max),], [0.0,0.5,0.4,1], cameraMatrix)
+    })*/
+    
+    //drawPoints(aabbs.map(aabb => m4.translation(...aabb.min)), [0.1,0.0,0.4,1], cameraMatrix)
+    //drawPoints(aabbs.map(aabb => m4.translation(...aabb.max)), [0.1,0.0,0.4,1], cameraMatrix)
+    drawPoints(cols.map(col => m4.translation(...col.PA)), [0.2,0.3,0.4,1], cameraMatrix)
+    drawPoints(cols.map(col => m4.translation(...col.PB)), [0.0,0.5,0.4,1], cameraMatrix)
+    drawPoints(sim.constrains.map(c => m4.translation(...c.PA)), [0.0,0.5,0.4,1], cameraMatrix)
+    drawPoints(sim.constrains.map(c => m4.translation(...c.PB)), [1.0,0.5,0.4,1], cameraMatrix)
+    
+    
+
     requestAnimationFrame(loop)
 
 
@@ -1285,14 +1362,21 @@ function createBoxGeometry(_a = 1, _b = 1, _c = 1){
   return {position : positions, normal : normals, indices}
 }
 
-const linedBoxIndices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, //front
+const linedBoxIndices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, // front
   0, 5, 5, 4, 4, 1, 1, 0, //bottom
   0, 4, 4, 7, 7, 3, 3, 0, //left
   1, 2, 2, 6, 6, 5, 5, 1, //right
   4, 5, 5, 6, 6, 7, 7, 4, // back
   2, 7, 7, 3, 3, 6, 6, 2 // top 
 ])
-module.exports = {createBoxGeometry, createGeometry, linedBoxIndices}
+const LinedBoxGeometry = (a = 1, b = 1, c = 1) =>{
+  const geometry = createBoxGeometry(a, b, c)
+  geometry.indices = linedBoxIndices
+  return geometry
+}
+
+
+module.exports = {createBoxGeometry , LinedBoxGeometry,  createGeometry, linedBoxIndices}
 
 /***/ }),
 
@@ -1631,7 +1715,7 @@ function drawScene(objectsToDraw,cameraMatrix, globalUniforms, type) {
           lastUsedProgramInfo.setAttributes(lastUsedBufferInfo)
           lastUsedProgramInfo.setUniforms( sprite.uniforms)
           if(globalUniforms)lastUsedProgramInfo.setUniforms(globalUniforms)
-          gl.drawElements(gl.TRIANGLES, sprite.buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
+          gl.drawElements(sprite.type, sprite.buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
         } 
       }
 
@@ -1640,7 +1724,7 @@ const pointvs =
       
       'void main(void) {' +
          'gl_Position = u_matrix * vec4(0.0,0.0,0.0,1.0);' +
-         'gl_PointSize = 1.0;'+
+         'gl_PointSize = 10.0;'+
       '}';
 const defaultFs =
       'precision mediump float;' +
@@ -1677,7 +1761,7 @@ const planeBuffersInfo = createBuffersInfo(gl, planePoints)
 
 function simpleDraw(programInfo, buffersInfo, type, numElements, list, u_color, cameraMatrix){
   
-  
+    
       
       gl.useProgram(programInfo.prg)
       programInfo.setAttributes(buffersInfo)
@@ -1719,9 +1803,44 @@ const drawLines = function(lines, color, cameraMatrix){
       simpleDraw(lineProgramInfo, lineBuffersInfo, gl.LINES,2, [m4.identity()], color, cameraMatrix)
     })
 }
+const aabbBI = (min, max) =>{
+  const geometry = { position : new Float32Array([
+    min[0], min[1], min[2],
+    min[0], min[1], max[2],
+    min[0], max[1], max[2],
+    min[0], max[1], min[2],
 
-
-module.exports = {drawScene, drawPoints, drawPlanes, drawLines, resizeCanvasToDisplaySize}
+    max[0], max[1], max[2],
+    max[0], max[1], min[2],
+    max[0], min[0], min[2],
+    max[0], min[0], max[2]
+  ]),
+  indices : new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, // front
+    0, 5, 5, 4, 4, 1, 1, 0, //bottom
+    0, 4, 4, 7, 7, 3, 3, 0, //left
+    1, 2, 2, 6, 6, 5, 5, 1, //right
+    4, 5, 5, 6, 6, 7, 7, 4, // back
+    2, 7, 7, 3, 3, 6, 6, 2 // top 
+  ])
+  }
+  return createBuffersInfo(gl, geometry)
+}
+const drawAAbbs = (aabbs, u_color, cameraMatrix) =>{
+  gl.useProgram(lineProgramInfo.prg)
+  
+  let viewProjectionMatrix
+  if(cameraMatrix)viewProjectionMatrix = m4.multiply(projectionMatrix, m4.inverse(cameraMatrix))
+  else viewProjectionMatrix = m4.identity()
+  aabbs.forEach(aabb =>{
+    const buffersInfo = aabbBI(aabb.min, aabb.max)
+    lineProgramInfo.setAttributes(buffersInfo)
+    const u_matrix = m4.multiply(viewProjectionMatrix,m4.identity())
+    lineProgramInfo.setUniforms({u_matrix, u_color })
+    
+    gl.drawElements(gl.LINES, buffersInfo.numElements, gl.UNSIGNED_SHORT, 0) 
+})
+}
+module.exports = {drawScene, drawPoints, drawPlanes, drawLines, resizeCanvasToDisplaySize, drawAAbbs}
 
 
 
@@ -1735,11 +1854,11 @@ module.exports = {drawScene, drawPoints, drawPlanes, drawLines, resizeCanvasToDi
 /***/ (function(module, exports, __webpack_require__) {
 
 
-const {createBoxGeometry, linedBoxIndices} = __webpack_require__(/*! ./primitives */ "./src/render/primitives.js")
+const {LinedBoxGeometry, createBoxGeometry} = __webpack_require__(/*! ./primitives */ "./src/render/primitives.js")
 const {createBuffersInfo,ProgrammInfo} = __webpack_require__(/*! ./programm */ "./src/render/programm.js")
 const m4 = __webpack_require__(/*! ../m4 */ "./src/m4.js")
-const geometry = createBoxGeometry()
-//geometry.indices = linedBoxIndices
+const geometry = LinedBoxGeometry()
+
 const buffersInfo = createBuffersInfo(gl,geometry)
 const vs = document.getElementById('vertex-shader-3d').text
 const fs = document.getElementById('fragment-shader-3d').text
@@ -1749,6 +1868,7 @@ function Box(size,color = [0.5,0.5,0.5,1]){
         buffersInfo,
         programmInfo,
         sizeMatrix : m4.scaling( ...size),
+        
         uniforms : {
             u_color : color,
             u_matrix : null,
@@ -1760,6 +1880,7 @@ class BoxSprite{
     constructor(color = [0.5,0.5,0.5,1]){
         this.buffersInfo = buffersInfo
         this.programmInfo = programmInfo
+        this.type = gl.LINES
         this.uniforms = {
             u_color : color,
             u_matrix : null,
@@ -1833,6 +1954,63 @@ module.exports = { LineSprite, PointsSprite, BoxSprite}
 
 /***/ }),
 
+/***/ "./src/server/GSsolver.js":
+/*!********************************!*\
+  !*** ./src/server/GSsolver.js ***!
+  \********************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+let distSq = (x,y) =>{
+    return x.map((e, i) => e - y[i]).reduce((acc,e) => acc += e**2 ,0)
+}
+
+const GaussSeidel = (A,b,n, eps) =>{
+    let x = new Array(n).fill(0)
+    let conv = false, maxIter = 64
+    let x_new = []
+    while(!conv && maxIter > 0){
+        maxIter--
+        x_new = [...x]
+        for(let i = 0; i < n; i++){
+            let s = 0
+            for(let j = 0; j < i; j++){
+                
+                s += A[i * n + j] * x_new[j]
+            }
+            for(let j = i + 1; j < n; j++)
+            {
+                s += A[i * n + j] * x[j]
+            }
+            x_new[i] = (b[i] - s) / A[i * n + i]
+        }
+        
+        conv = distSq(x, x_new) < eps
+        x = [...x_new]
+    }
+    return x_new
+}
+module.exports = {GaussSeidel}
+
+/***/ }),
+
+/***/ "./src/server/aabb.js":
+/*!****************************!*\
+  !*** ./src/server/aabb.js ***!
+  \****************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+class AABB{
+    constructor(min, max){
+        this.min = min
+        this.max = max
+    }
+}
+module.exports = { AABB }
+
+/***/ }),
+
 /***/ "./src/server/collider.js":
 /*!********************************!*\
   !*** ./src/server/collider.js ***!
@@ -1842,47 +2020,46 @@ module.exports = { LineSprite, PointsSprite, BoxSprite}
 
 
 
-const {Vector} = __webpack_require__(/*! ./vectors */ "./src/server/vectors.js")
-const {EventEmitter} = __webpack_require__(/*! ./eventEmitter */ "./src/server/eventEmitter.js")
+const {scale, sum} = __webpack_require__(/*! ./vector */ "./src/server/vector.js")
+
 const m4 = __webpack_require__(/*! ../m4 */ "./src/m4.js")
 const m3 = __webpack_require__(/*! ../m3 */ "./src/m3.js")
-const xAxis = new Vector(1,0,0)
-const yAxis = new Vector(0,1,0)
-const zAxis = new Vector(0,0,1)
-const xAxisNegative = xAxis.multiply(-1)
-const yAxisNegative = yAxis.multiply(-1)
-const zAxisNegative = zAxis.multiply(-1)
-const dirs = [xAxis,yAxis,zAxis,xAxisNegative,yAxisNegative, zAxisNegative]
+const { AABB } = __webpack_require__(/*! ./aabb */ "./src/server/aabb.js")
+const xAxis = [1, 0, 0]
+const yAxis = [0, 1, 0]
+const zAxis = [0, 0, 1]
+const xAxisNegative = scale(xAxis, -1)
+const yAxisNegative = scale(yAxis, -1)
+const zAxisNegative = scale(zAxis, -1)
 
-class Box extends EventEmitter{
+
+class Box{
     constructor(a = 1,b = 1,c = 1){
-        super()
-        this.min = new Vector(-a/2,-b/2,-c/2)
-        this.max = new Vector(a/2,b/2,c/2)
+        
+        this.min = [-a/2, -b/2, -c/2]
+        this.max = [a/2, b/2, c/2]
         this.Rmatrix = m3.identity()
         this.RmatrixInverse = m3.identity()
         this.RS = m3.identity()
-        this.pos = new Vector(0,0,0)
+        this.pos = [0, 0, 0]
     }
     getAABB(){
-        const maxX = this.support(xAxis).x
-        const maxY = this.support(yAxis).y
-        const maxZ = this.support(zAxis).z
+        const maxX = this.support(xAxis)[0]
+        const maxY = this.support(yAxis)[1]
+        const maxZ = this.support(zAxis)[2]
 
-        const minX = this.support(xAxisNegative).x
-        const minY = this.support(yAxisNegative).y
-        const minZ = this.support(zAxisNegative).z
-        return [new Vector(minX, minY, minZ), new Vector(maxX, maxY, maxZ)]
+        const minX = this.support(xAxisNegative)[0]
+        const minY = this.support(yAxisNegative)[1]
+        const minZ = this.support(zAxisNegative)[2]
+        return new AABB([minX, minY, minZ], [maxX, maxY, maxZ])
     }
-    translate(tx,ty,tz){
-        this.pos.x += tx
-        this.pos.y += ty
-        this.pos.z += tz
+    translate(t){
+        this.pos = sum(this.pos, t)
     }
-    rotate(ax,ay,az){
-        this.Rmatrix = m3.xRotate(this.Rmatrix, ax)
-        this.Rmatrix = m3.yRotate(this.Rmatrix, ay)
-        this.Rmatrix = m3.zRotate(this.Rmatrix, az)
+    rotate(r){
+        this.Rmatrix = m3.xRotate(this.Rmatrix, r[0])
+        this.Rmatrix = m3.yRotate(this.Rmatrix, r[1])
+        this.Rmatrix = m3.zRotate(this.Rmatrix, r[2])
 
         this.RmatrixInverse = m3.transpose(this.Rmatrix)
     }
@@ -1891,39 +2068,40 @@ class Box extends EventEmitter{
         this.RmatrixInverse = m3.transpose(matrix)
     }
     support(dir){
-        const _dir = m3.transformPoint(this.RmatrixInverse, dir.toArray())
+        const _dir = m3.transformPoint(this.RmatrixInverse, dir)
         
-        const res = new Vector(0,0,0)
+        const res = [0, 0, 0]
         
-        res[0]= _dir[0] > 0 ? this.max.x : this.min.x
-        res[1] = _dir[1] > 0 ? this.max.y : this.min.y
-        res[2] = _dir[2] > 0 ? this.max.z : this.min.z
+        res[0]= _dir[0] > 0 ? this.max[0] : this.min[0]
+        res[1] = _dir[1] > 0 ? this.max[1] : this.min[1]
+        res[2] = _dir[2] > 0 ? this.max[2] : this.min[2]
         
-        const sup = new Vector(...m4.transformPoint(this.getM4(), res))
-        this.emit('sup', sup,dir)
+        const sup = m4.transformPoint(this.getM4(), res)
+        
         return sup
   
     }
     getInverseInertiaTensor(mass){
-        const i1 = mass/12 * (this.max.y * this.max.y + this.max.z * this.max.z)
-        const i2 = mass / 12 *(this.max.x * this.max.x + this.max.z * this.max.z)
-        const i3 = mass / 12 *(this.max.x * this.max.x + this.max.y * this.max.y)
+        const i1 = mass/12 * (this.max[1] * this.max[1] + this.max[2] * this.max[2])
+        const i2 = mass / 12 *(this.max[0] * this.max[0] + this.max[2] * this.max[2])
+        const i3 = mass / 12 *(this.max[0] * this.max[0] + this.max[1] * this.max[1])
         
         const m = new Float32Array([1/i1, 0, 0, 0, 1/i2, 0, 0, 0, 1/i3])
         
-        return m3.multiply(this.Rmatrix,(m3.multiply(this.RmatrixInverse,m)))
+        return m3.multiply(m3.multiply(this.Rmatrix,m), this.RmatrixInverse)
 
     }
     getM4(){
         const m = m4.m3Tom4(this.Rmatrix)
-        m[12] = this.pos.x
-        m[13] = this.pos.y
-        m[14] = this.pos.z
+        m[12] = this.pos[0]
+        m[13] = this.pos[1]
+        m[14] = this.pos[2]
         m[15] = 1
         return m
     }
-    test(){
-        return dirs.map(d =>this.support(d).toArray())
+    localToGlobal(v){
+        let global = m3.transformPoint(this.Rmatrix, v)
+        return sum(this.pos, global)
     }
 }
 
@@ -1939,114 +2117,340 @@ module.exports = { Box}
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-const {Vector, cross, dot,normalize} = __webpack_require__(/*! ./vectors */ "./src/server/vectors.js")
+const {sum, diff, scale, cross, dot, normalize, norm, normSq} = __webpack_require__(/*! ./vector */ "./src/server/vector.js")
+const {GaussSeidel} = __webpack_require__(/*! ./GSsolver */ "./src/server/GSsolver.js")
 const m3 = __webpack_require__(/*! ../m3 */ "./src/m3.js")
-const tol = 0.005
-const tol2 = 0.002
-const numIterations = 7
-function getCollisionResolution(manifold, deltaTime){
+const tol = 0.01
+const tol2 = 0.00001
+const numIterations = 1
+const numPosIterations = 1
+
+const clamp = (v, min, max)=>{
+    if(v > min){
+        if(v < max) return v
+        else return max
+    }
+    return min
+}
+
+
+const getManifoldSystem = manifold =>{
     const body1 = manifold.body1
     const body2 = manifold.body2
     
+    const M1 = body1.inverseMass
+    const I1 = body1.inverseInertia
+    const M2 = body2.inverseMass
+    const I2 = body2.inverseInertia
+    const contacts = manifold.contacts
+    let n = contacts.length    
+    let A = []
+    const JV = []
+    for(let i = 0; i < n; i++){
+       const rowNum = i * n
+       const JM = [
+        scale(contacts[i].J[0], M1),
+        m3.transformPoint(I1, contacts[i].J[1]),
+        scale(contacts[i].J[2], M2),
+        m3.transformPoint(I2, contacts[i].J[3])
+       ] 
+       for(let j = 0; j < n; j++){    
+           if( i === j) {
+                A[rowNum + j ] = contacts[i].effMass
+                continue
+            }
+            A[rowNum + j] =  dot(JM[0], contacts[j].J[0]) +
+                             dot(JM[1], contacts[j].J[1]) + 
+                             dot(JM[2], contacts[j].J[2]) + 
+                             dot(JM[3], contacts[j].J[3])
+       }
+       JV.push(
+           - dot(contacts[i].J[0], body1.velocity) -
+           dot(contacts[i].J[1], body1.angularV) -
+           dot(contacts[i].J[2], body2.velocity) -
+           dot(contacts[i].J[3], body2.angularV)
+       ) 
+    }
+    return {A, JV}
+}
+const blockSolver = (manifold, deltaTime) =>
+{
+    const body1 = manifold.body1
+    const body2 = manifold.body2
+    
+    const contacts = manifold.contacts
+    let n = contacts.length
+   
+    const {A, JV} = getManifoldSystem(manifold)
+    for(let i = 0; i < n; i++){
+       // JV[i] += Math.max(0,contacts[i].penDepth-tol)/deltaTime * 0.25
+    }
+    const lambda = GaussSeidel(A, JV, n, 0.000001)
+    
+    for(let i = 0; i < n; i++){
+        body1.applyImpulse(scale(contacts[i].J[0], lambda[i]), contacts[i].ra)
+        body2.applyImpulse(scale(contacts[i].J[2], lambda[i]), contacts[i].rb)
+    }
+    return lambda
+}
+const frictionSolver = (contact, lambda, body1, body2) =>{
+    contact.relVelocity = sum(body2.velocity, cross(body2.angularV, contact.rb))
+    contact.relVelocity = diff(contact.relVelocity, body1.velocity)
+    contact.relVelocity = diff(contact.relVelocity, cross(body1.angularV, contact.ra))    
+
+    const mu = (body1.friction + body1.friction) 
+    let fImpulse1 = -dot(contact.relVelocity, contact.fDir1) / contact.fEffMass1
+    fImpulse1 = clamp(fImpulse1, -lambda * mu, lambda * mu)
+    
+    let fImpulse2 = -dot(contact.relVelocity, contact.fDir2) / contact.fEffMass2
+    fImpulse2 = clamp(fImpulse2, -lambda * mu, lambda * mu)
+    
+    contact.accFI1 += fImpulse1
+    contact.accFI2 += fImpulse2
+
+    let fVec = sum(scale(contact.fDir1, fImpulse1),scale(contact.fDir2, fImpulse2))
+
+    body1.applyImpulse(scale(fVec, -1), contact.ra)
+    body2.applyImpulse(fVec, contact.rb)
+}
+function solveCollision(manifold, deltaTime){
+    const body1 = manifold.body1
+    const body2 = manifold.body2
+    const contacts = manifold.contacts
+    if(contacts.length > 1){
+        const lambda = blockSolver(manifold,deltaTime)
+        const n = lambda.length
+        for(let i = 0; i <n; i++){
+            frictionSolver(contacts[i], lambda[i], body1, body2)
+        }
+        return
+    }
     for(let j = 0; j <  numIterations; j++){
         for(let i = 0, n = manifold.contacts.length; i< n; i++){
-            let vel1 = body1.velocity
-            let vel2 = body2.velocity
-            let omega1 = body1.angularV
-            let omega2 = body2.angularV
             const contact = manifold.contacts[i]
-            const I1 = body1.getInverseInertiaTensor()
-            const I2 = body2.getInverseInertiaTensor()
-            const M1 = body1.inverseMass
-            const M2 = body2.inverseMass
-            const normal = normalize(contact.n)
-            let J1 = normal.multiply(-1)
-            let J2 = cross(normal, contact.ra)
-            let J3 = normal
-            let J4 = cross(contact.rb, normal)
+            const k2 = contact.effMass
+
+            if(contact.penDepth <=0) return
             
-            
-        
-        
-            const penDepth = contact.n.norm()
-            const Vc = dot(vel2.add(cross(omega2, contact.rb)).substract(vel1).substract(cross(omega1, contact.ra)),normal)
+            contact.relVelocity = sum(body2.velocity, cross(body2.angularV, contact.rb))
+            contact.relVelocity = diff(contact.relVelocity, body1.velocity)
+            contact.relVelocity = diff(contact.relVelocity, cross(body1.angularV, contact.ra))
+            const Vc = dot(contact.relVelocity, contact.n)
             const restitution =  Math.max(Vc - tol2, 0) * 0.1
-    
-            let b = Math.max(0,penDepth-tol)/deltaTime *0.1 + restitution
+            let b = Math.max(0,contact.penDepth-tol)/deltaTime * 0.25
             
-            const k1 = dot(J1, vel1) + dot(J2, omega1) + dot(J3, vel2) + dot(J4, omega2) - b
-        
-            const Ma = [M1, 0, 0,
-                        0, M1, 0,
-                        0, 0, M1 ]
-            const Mb = [M2, 0, 0,
-                        0, M2, 0,
-                        0, 0, M2]
-            const JMa = m3.dot(m3.transformPoint(Ma, J1.toArray()),J1.toArray())
-            const JIa = m3.dot(m3.transformPoint(I1, J2.toArray()), J2.toArray())
-            const JMb = m3.dot(m3.transformPoint(Mb, J3.toArray()), J3.toArray())
-            const JIb = m3.dot(m3.transformPoint(I2, J4.toArray()), J4.toArray())
-            const k2 = (JMa + JMb + JIa + JIb)
-            
-            
-            let lambda = -k1/k2
+            let lambda =   ( - Vc)/contact.effMass
             let oldAcc = contact.accI
             contact.accI += lambda
             if(contact.accI < 0) contact.accI = 0
             lambda = contact.accI - oldAcc
-            
-            
-            vel1 = J1.multiply(lambda * M1)
-            body1.addVelocity(vel1)
-            omega1 = (new Vector(...m3.transformPoint(I1,J2.toArray()))).multiply(lambda)
-            body1.addAngularV(omega1)
-            vel2 = J3.multiply(lambda * M2)
-            body2.addVelocity(vel2)
-            omega2 = (new Vector(...m3.transformPoint(I2, J4.toArray()))).multiply(lambda)
-            body2.addAngularV(omega2)
+
+            body1.applyImpulse(scale(contact.n, -lambda), contact.ra)
+            body2.applyImpulse(scale(contact.n, lambda),  contact.rb)
+            frictionSolver(contact, lambda,  body1, body2)
         }
     }
-    
-    
-    
-    
-    
 }
-const warmStart = (manifold, deltaTime) =>{
-    const body1 = manifold.body1
-    const body2 = manifold.body2
+
+
+
+solveConstraint = (constraint, deltaTime) =>{
+
+    const ra = constraint.body1.collider.localToGlobal(constraint.ra)
+    const rb =  constraint.body2.collider.localToGlobal(constraint.rb)
+    const n = constraint.n
     
-    for(let i = 0, n = manifold.contacts.length; i< n; i++){
-        let vel1 = body1.velocity
-        let vel2 = body2.velocity
-        let omega1 = body1.angularV
-        let omega2 = body2.angularV
-        const contact = manifold.contacts[i]
-        const I1 = body1.getInverseInertiaTensor()
-        const I2 = body2.getInverseInertiaTensor()
-        const M1 = body1.inverseMass
-        const M2 = body2.inverseMass
-        const normal = normalize(contact.n)
-        let J1 = normal.multiply(-1)
-        let J2 = cross(normal, contact.ra)
-        let J3 = normal
-        let J4 = cross(contact.rb, normal)
+    if(constraint.dist < 0.01) return
+    const normal = scale(constraint.n, 1/constraint.dist)
+    let v1 = sum(constraint.body1.velocity, cross(constraint.body1.angularV, constraint.ra))
+    let v2 = sum(constraint.body2.velocity, cross(constraint.body2.angularV, constraint.rb))
+    let relVelocity = diff(v2, v1)
+  
+    
+    
+    const Vc = dot(relVelocity, normal)
+    let b = constraint.dist/deltaTime *0.2
+    const softness = 2
+    let lambda =   (- Vc) / (constraint.effMass )
+    
+    
+    constraint.body1.applyImpulse(scale(normal, -lambda), constraint.ra)
+    constraint.body2.applyImpulse(scale(normal, lambda),  constraint.rb)
+}
 
+const solvePosition = (constraint, deltaTime) =>{
+        if(constraint.dist < 0.01) return
+        const normal = scale(constraint.n, 1/constraint.dist)
+        let v1 = sum(constraint.body1.pseudoVelocity, cross(constraint.body1.pseudoAngularV, constraint.ra))
+        let v2 = sum(constraint.body2.pseudoVelocity, cross(constraint.body2.pseudoAngularV, constraint.rb))
+        let relVelocity = diff(constraint.body2.pseudoVelocity, constraint.body1.pseudoVelocity)
 
-        const lambda = manifold.contacts[i].accI * deltaTime
-        vel1 = J1.multiply(lambda * M1)
-        body1.addVelocity(vel1)
+        const Vc = dot(relVelocity, normal)
         
-        omega1 = (new Vector(...m3.transformPoint(I1,J2.toArray()))).multiply(lambda)
-        body1.addAngularV(omega1)
-        vel2 = J3.multiply(lambda * M2)
-        body2.addVelocity(vel2)
-        omega2 = (new Vector(...m3.transformPoint(I2, J4.toArray()))).multiply(lambda)
-        body2.addAngularV(omega2)
-    }
-    
+        
+        let b = Math.max(0,constraint.dist/deltaTime - 0.01) 
+        const softness = 2
+        let lambda =   (b - Vc) / (constraint.body1.inverseMass + constraint.body2.inverseMass)
+        
+        
+        
+       if(Math.abs(lambda) < 0.1)return
+        
+        constraint.body1.applyPseudoImpulse(scale(normal, -lambda), [0,0,0])
+        constraint.body2.applyPseudoImpulse(scale(normal, lambda),  [0,0,0])
 }
-module.exports = {getCollisionResolution, warmStart}
+
+const solveContactPositionErr = (contact, deltaTime, n) =>{
+    if(contact.penDepth < 0.01) return
+   
+    let v1 = sum(contact.body1.pseudoVelocity, cross(contact.body1.pseudoAngularV, contact.ra))
+    let v2 = sum(contact.body2.pseudoVelocity, cross(contact.body2.pseudoAngularV, contact.rb))
+    let relVelocity = diff(v2, v1)
+
+    const Vc = dot(relVelocity, contact.n)
+    //if(Vc < 0)return
+    
+    let b = contact.penDepth/deltaTime /n
+    //if(Vc >= b) return
+    let lambda =   (b - Vc) /  (contact.body1.inverseMass + contact.body2.inverseMass)
+    
+    contact.penDepth = 0
+    
+    //if(Math.abs(lambda) < 0.1)return
+    
+    contact.body1.applyPseudoImpulse(scale(contact.n, -lambda), [0,0,0])
+    contact.body2.applyPseudoImpulse(scale(contact.n, lambda),  [0,0,0])    
+}
+module.exports = {solveCollision,   solvePosition, solveContactPositionErr}
+
+/***/ }),
+
+/***/ "./src/server/contact.js":
+/*!*******************************!*\
+  !*** ./src/server/contact.js ***!
+  \*******************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+const {dot, cross, normalize, diff, scale, norm} = __webpack_require__(/*! ./vector */ "./src/server/vector.js")
+const m3 = __webpack_require__(/*! ../m3 */ "./src/m3.js")
+class Constraint{
+    constructor( body1, body2){
+        
+        this.n = null
+        this.J = null
+        this.effMass = null
+        this.body1 = body1
+        this.body2 = body2
+        this.ra = null
+        this.rb = null
+    }
+    updateEq(){
+    }
+}
+class Contact extends Constraint{
+    constructor(PA, PB, ra, rb, n, penDepth, body1, body2){
+        super( body1, body2)
+        this.ra = ra
+        this.rb = rb
+        this.PA = PA
+        this.PB = PB
+        this.n = n
+        this.penDepth = penDepth
+        this.initialVelProj = null
+        this.effMass = null
+        
+        this.J = null
+        this.accI = 0
+        this.accFI1 = 0
+        this.accFI2 = 0
+        try{
+            if(dot(this.n, [1, 0, 0]) < 0.5){
+                this.fDir1 = cross(this.n, [1, 0, 0])
+            }
+            else {
+                this.fDir1 = cross(this.n, [0, 0, 1])
+            }
+            this.fDir2 = normalize(cross(this.fDir1, this.n))
+            this.fDir1 = normalize(this.fDir1)
+        }
+        catch(err){
+            console.log(this.n)
+            throw new Error()
+        }
+    }
+    updateEq(){
+        this.J = [
+            scale(this.n, -1),
+            cross(this.n, this.ra),
+            this.n,
+            cross(this.rb, this.n)
+        ]
+        const I1 = this.body1.inverseInertia
+        const I2 = this.body2.inverseInertia
+        const M1 = this.body1.inverseMass
+        const M2 = this.body2.inverseMass
+        this.effMass = M1 
+            + dot( m3.transformPoint(I1, this.J[1]), this.J[1])
+            + M2 
+            + dot( m3.transformPoint(I2, this.J[3]), this.J[3])
+        const tJ1 = [
+            this.fDir1,
+            cross(this.ra, this.fDir1),
+            scale(this.fDir1, -1),
+            cross(this.rb, this.fDir1)
+        ]
+        this.fEffMass1 = this.body1.inverseMass
+                + m3.dot(m3.transformPoint(this.body1.inverseInertia, tJ1[1]), tJ1[1])
+                + this.body2.inverseMass
+                + m3.dot(m3.transformPoint(this.body2.inverseInertia, tJ1[3]), tJ1[3])
+        const tJ2 = [
+            scale(this.fDir2, -1),
+            cross(this.ra, this.fDir2 ),
+            this.fDir2,
+            cross( this.fDir2, this.rb)
+        ]
+        this.fEffMass2 = this.body1.inverseMass
+                + m3.dot(m3.transformPoint(this.body1.inverseInertia, tJ2[1]), tJ2[1])
+                + this.body2.inverseMass
+                + m3.dot(m3.transformPoint(this.body2.inverseInertia, tJ2[3]), tJ2[3])
+        
+    }
+}
+class Joint extends Constraint{
+    constructor(localRa, localRb, body1, body2){
+        
+        super( body1, body2)
+        this.localRa = localRa
+        this.localRb = localRb
+        this.PA = this.body1.collider.localToGlobal(this.localRa)
+        this.PB = this.body2.collider.localToGlobal(this.localRb)
+    }
+    updateEq(){
+        this.PA = this.body1.collider.localToGlobal(this.localRa)
+        this.PB = this.body2.collider.localToGlobal(this.localRb)
+        this.n = diff(this.PA, this.PB)
+        this.ra = diff(this.PA,this.body1.collider.pos)
+        this.rb = diff(this.PB,this.body2.collider.pos)
+        this.dist = norm(this.n)
+        this.J = [
+            scale(this.n, 1/this.dist),
+            scale(cross(this.n, this.ra), 1/this.dist),
+            scale(this.n, -1/this.dist),
+            scale(cross(this.rb, this.n), 1/this.dist)
+        ]
+        const I1 = this.body1.inverseInertia
+        const I2 = this.body2.inverseInertia
+        const M1 = this.body1.inverseMass
+        const M2 = this.body2.inverseMass
+        this.effMass = M1 
+            + dot( m3.transformPoint(I1, this.J[1]), this.J[1])
+            + M2 
+            + dot( m3.transformPoint(I2, this.J[3]), this.J[3])
+        
+    }
+}
+module.exports = {Contact, Constraint, Joint}
 
 /***/ }),
 
@@ -2092,68 +2496,69 @@ module.exports = {EventEmitter}
 /***/ (function(module, exports, __webpack_require__) {
 
 
-const {Vector, dot, cross, normalize} =  __webpack_require__(/*! ./vectors */ "./src/server/vectors.js")
+const {dot, cross, normalize, sum, diff, len, scale, isNull, norm} =  __webpack_require__(/*! ./vector */ "./src/server/vector.js")
 
-
+const {Contact} = __webpack_require__(/*! ./contact */ "./src/server/contact.js")
+const m3 = __webpack_require__(/*! ../m3 */ "./src/m3.js")
 const GJK_MAX_ITERATIONS_NUM = 64
 
 
-const update_simplex3 = () =>{
+function update_simplex3(a, b, c, d, search_dir, simp_dim){
         
-    const n = cross(b.substract(a),c.substract(a))
-    const AO = a.multiply(-1)
+    const n = cross(diff(this.b, this.a), diff(this.c, this.a))
+    const AO = scale(this.a, -1)
     
-    simp_dim = 2
-    if(dot(cross(b.substract(a), n), AO) > 0){
-        c = a
-        search_dir = cross(cross(b.substract(a), AO),b.substract(a))
+    this.simp_dim = 2
+    if(dot(cross(diff(this.b, this.a), n), AO) > 0){
+        this.c = this.a
+        this.search_dir = cross(cross(diff(this.b, this.a), AO), diff(this.b, this.a))
         return
     }
-    if(dot(cross(n, c.substract(a)),AO) > 0){ 
-        b = a
-        search_dir = cross(cross(c.substract(a), AO),c.substract(a))
+    if(dot(cross(n, diff(this.c, this.a)), AO) > 0){ 
+        this.b = this.a
+        this.search_dir = cross(cross(diff(this.c, this.a), AO),diff(this.c, this.a))
         return
     }
-    simp_dim = 3
+    this.simp_dim = 3
     if(dot(n, AO) > 0){
-        d = c
-        c = b
-        b = a
-        search_dir = n
+        this.d = this.c
+        this.c = this.b
+        this.b = this.a
+        this.search_dir = n
         return
     }
-    d = b
-    b = a
-    search_dir = n.multiply(-1)
+    this.d = this.b
+    this.b = this.a
+    this.search_dir = scale(n, -1)
     return
 }
-const update_simplex4 = () =>{
+function update_simplex4(a, b, c, d, search_dir, simp_dim){
         
-    const ABC = cross(b.substract(a),(c.substract(a)))
-    const ACD = cross(c.substract(a),(d.substract(a)))
-    const ADB = cross(d.substract(a),(b.substract(a)))
-    const AO = a.multiply(-1)
-    simp_dim = 3
+    const ABC = cross(diff(this.b, this.a), diff(this.c, this.a))
+    const ACD = cross(diff(this.c, this.a), diff(this.d, this.a))
+    const ADB = cross(diff(this.d, this.a), diff(this.b, this.a))
+    const AO = scale(this.a, -1)
+    this.simp_dim = 3
 
     if(dot(ABC,AO) > 0){
-        d = c
-        c = b
-        b = a
-        search_dir = ABC
+        this.d = this.c
+        this.c = this.b
+        this.b = this.a
+        this.search_dir = ABC
         return false
     }
 
     if(dot(ACD,AO) > 0){
-        b = a
-        search_dir = ACD
+        this.b = this.a
+        this.search_dir = ACD
         return false
     }
 
     if(dot(ADB,(AO)) > 0){
-        c = d
-        d = b
-        b = a
-        search_dir = ADB
+        this.c = this.d
+        this.d = this.b
+        this.b = this.a
+        this.search_dir = ADB
         return false
     }
     return true
@@ -2161,85 +2566,88 @@ const update_simplex4 = () =>{
 function gjk(body1,body2){
     const coll1 = body1.collider
     const coll2 = body2.collider
-    this.a, this.b, this.c, this.d, this.search_dir = new Vector(0,0,0), this.simp_dim = 2
+    this.a = [0,0,0]
+    this.b = [0,0,0]
+    this.c = [0,0,0]
+    this.d = [0,0,0]
+    this.search_dir = [0,0,0]
+    this.simp_dim = 0
+   
     this.originsMap = new Map()
     
 
     
     
-    let mtv = new Vector(0,0,0)
+    let mtv = [0, 0, 0]
    
-    search_dir = coll1.pos.substract(coll2.pos)
-    const c_origin1 = coll1.support(search_dir.multiply(-1))
-    const c_origin2 = coll2.support(search_dir)
-    c = c_origin2.substract(c_origin1)
-    c.oa = c_origin1
-    c.ob = c_origin2
-    this.originsMap.set(c,[c_origin1, c_origin2])
+    this.search_dir = diff(coll1.pos, coll2.pos)
+    const c_origin1 = coll1.support(scale(this.search_dir, -1))
+    const c_origin2 = coll2.support(this.search_dir)
+    this.c = diff(c_origin2, c_origin1)
     
-    search_dir = c.multiply(-1)
+    this.originsMap.set(this.c,[c_origin1, c_origin2])
     
-    const b_origin1 = coll1.support(search_dir.multiply(-1))
-    const b_origin2 = coll2.support(search_dir)
-    b = b_origin2.substract(b_origin1)
-    b.oa = b_origin1
-    b.ob = b_origin2
-    this.originsMap.set(b, [b_origin1, b_origin2])
+    this.search_dir = scale(this.c, -1)
     
-    if(dot(b,search_dir) < 0){
+    const b_origin1 = coll1.support(scale(this.search_dir, -1))
+    const b_origin2 = coll2.support(this.search_dir)
+    this.b = diff(b_origin2, b_origin1)
+    
+    this.originsMap.set(this.b, [b_origin1, b_origin2])
+    
+    if(dot(this.b, this.search_dir) < 0){
         
         return false
     }
     
-    search_dir = cross(cross(c.substract(b),b.multiply(-1)),c.substract(b))
+    this.search_dir = cross(cross(diff(this.c, this.b), scale(this.b, -1)), diff(this.c, this.b))
     
-    if(search_dir.isNull()){
+    if(isNull(this.search_dir)){
         
-        search_dir = cross(c.substract(b),(new Vector(1,0,0)))
+        this.search_dir = cross(diff(this.c, this.b),[1,0,0])
         
-        if(search_dir.isNull()){
+        if(isNull(this.search_dir)){
             
-            search_dir = cross(c.substract(b),(new Vector(0,0,-1)))
+            this.search_dir = cross(diff(this.c, this.b), [0, 0, -1])
             
         }
     }
     
-    simp_dim = 2
+    this.simp_dim = 2
     for(let i = 0; i < GJK_MAX_ITERATIONS_NUM; ++i){
         
-        const a_origin1 = coll1.support(search_dir.multiply(-1))
-        const a_origin2 = coll2.support(search_dir)
-        a = a_origin2.substract(a_origin1)
-        a.oa = a_origin1
-        a.ob = a_origin2
-        this.originsMap.set(a, [a_origin1, a_origin2])
-        if(dot(a,search_dir) < 0 ) return false
+        const a_origin1 = coll1.support(scale(this.search_dir, -1))
+        const a_origin2 = coll2.support(this.search_dir)
+        this.a = diff(a_origin2, a_origin1)
         
-        simp_dim ++
-        if(simp_dim === 3){
-            update_simplex3()
+        this.originsMap.set(this.a, [a_origin1, a_origin2])
+        if(dot(this.a, this.search_dir) < 0 ) return false
+        
+        this.simp_dim ++
+        if(this.simp_dim === 3){
+            update_simplex3.apply(this)
         }
-        else if(update_simplex4()){
+        else if(update_simplex4.apply(this)){
             
-            return EPA(a,b,c,d,body1,body2)
+            return EPA(this.a, this.b, this.c, this.d, this.originsMap, body1, body2)
 
         }
     }
 }
 
 const baricentric = (face, point) =>{
-    let a11 = face[0].x
-    let a12 = face[1].x
-    let a13 = face[2].x
-    let b1 = point.x
-    let a21 = face[0].y
-    let a22 = face[1].y
-    let a23 = face[2].y
-    let b2 = point.y
-    let a31 = face[0].z
-    let a32 = face[1].z
-    let a33 = face[2].z
-    let b3 = point.z
+    let a11 = face[0][0]
+    let a12 = face[1][0]
+    let a13 = face[2][0]
+    let b1 = point[0]
+    let a21 = face[0][1]
+    let a22 = face[1][1]
+    let a23 = face[2][1]
+    let b2 = point[1]
+    let a31 = face[0][2]
+    let a32 = face[1][2]
+    let a33 = face[2][2]
+    let b3 = point[2]
 
     const d = a11 * a22 * a33 
     + a21 * a32 * a13
@@ -2271,33 +2679,21 @@ const baricentric = (face, point) =>{
 
    return [d1/d , d2/d, d3/d ]
 }
-const originToFaceProj = ( face) =>{
-        
-        
-        
-       
-
+const originToFaceProj = face =>{
     const normal = face[3]
     const point = face[0]
-    const c = -normal.x * point.x - normal.y * point.y - normal.z * point.z
-
-    const t = - c / (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z)
-
-
-
-
-    return new Vector(t * normal.x, t * normal.y, t * normal.z)
+    const c = - normal[0] * point[0] - normal[1] * point[1] - normal[2] * point[2]
+    const t = - c / (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
+    return [t * normal[0], t * normal[1], t * normal[2]]
 }
 
-const formContact = ()=>{
-    
-}
 
 const TOLERANCE = 0.001
 const MAX_NUM_FACES = 64
 const MAX_NUM_LOOSE_EDGES = 32
 const EPA_MAX_NUM_ITER = 64
-const EPA = (a, b, c, d, body1, body2) =>{
+const EPA = (a, b, c, d, originsMap, body1, body2) =>{
+  
     const coll1 = body1.collider
     const coll2 = body2.collider
     const faces = []
@@ -2308,24 +2704,24 @@ const EPA = (a, b, c, d, body1, body2) =>{
     faces[0][0] = a
     faces[0][1] = b
     faces[0][2] = c
-    faces[0][3] = normalize(cross(b.substract(a),c.substract(a)))
+    faces[0][3] = normalize(cross(diff(b, a),diff(c, a)))
     faces[1][0] = a
     faces[1][1] = c
     faces[1][2] = d
-    faces[1][3] = normalize(cross(c.substract(a),d.substract(a)))
+    faces[1][3] = normalize(cross(diff(c, a),diff(d, a)))
     faces[2][0] = a
     faces[2][1] = d
     faces[2][2] = b
-    faces[2][3] = normalize(cross(d.substract(a),b.substract(a)))
+    faces[2][3] = normalize(cross(diff(d, a),diff(b, a)))
     faces[3][0] = b
     faces[3][1] = d
     faces[3][2] = c
-    faces[3][3] = normalize(cross(d.substract(b),c.substract(b)))
+    faces[3][3] = normalize(cross(diff(d, b), diff(c, b)))
     
     let num_faces = 4
     let closest_face = null
     let search_dir
-   
+    
 
     let p
     for(let iteration = 0; iteration < EPA_MAX_NUM_ITER; ++iteration){
@@ -2340,12 +2736,12 @@ const EPA = (a, b, c, d, body1, body2) =>{
             }
         }
         search_dir = faces[closest_face][3]
-        p = coll2.support(search_dir).substract(coll1.support(search_dir.multiply(-1)))
-        const p_origin1 = coll1.support(search_dir.multiply(-1))
+        
+        const p_origin1 = coll1.support(scale(search_dir, -1))
         const p_origin2 = coll2.support(search_dir)
-        p.oa = p_origin1
-        p.ob = p_origin2
+        p = diff(p_origin2, p_origin1)
         originsMap.set(p, [ p_origin1, p_origin2])
+
         if(dot(p,search_dir) - min_dist < 0.00001){
             const face = faces[closest_face]
 
@@ -2361,27 +2757,42 @@ const EPA = (a, b, c, d, body1, body2) =>{
             const [Ac, Bc] = originsMap.get(face[2])
             //const Ac = face[2].oa
             //const Bc = face[2].ob
-           
+            
             const result = baricentric(face,point)
             
+            if(isNaN(result[0] + result[1] + result[2] )){
+                console.log('no conv')
+                return false}
             
-            let PA = Aa.multiply(result[0]).add(Ab.multiply(result[1])).add(Ac.multiply(result[2]))
-            let PB = Ba.multiply(result[0]).add(Bb.multiply(result[1])).add(Bc.multiply(result[2]))
+            let PA = sum(sum(scale(Aa, result[0]), scale(Ab, result[1])), scale(Ac, result[2]))
+            //Aa.multiply(result[0]).add(Ab.multiply(result[1])).add(Ac.multiply(result[2]))
+            let PB = sum(sum(scale(Ba, result[0]), scale(Bb, result[1])), scale(Bc, result[2]))
+            //Ba.multiply(result[0]).add(Bb.multiply(result[1])).add(Bc.multiply(result[2]))
             
             //const ra = PA.substract(coll1.pos)
     
-            const rb = PB.substract(coll2.pos)
-            const ra = PA.substract(coll1.pos)
-            const n = face[3].multiply(-dot(p,search_dir))
-            if(n.isNull()) return false
-            return {PA, PB, n, ra, rb, accI : 0}
+            const rb = diff(PB, coll2.pos)
+            const ra = diff(PA, coll1.pos)
+            const raLocal = m3.transformPoint(coll1.RmatrixInverse, ra)
+            const rbLocal = m3.transformPoint(coll2.RmatrixInverse, rb)
+            const n = normalize(scale(face[3], -dot(p,search_dir)))
+            if(norm(n) < 0.01)
+                return false
+            const penDepth = -dot(diff(PB, PA), n)
+            
+            const contact = new Contact(PA, PB, ra, rb, n, penDepth, body1, body2)
+            contact.raLocal = raLocal
+            contact.rbLocal = rbLocal
+            
+            return contact
+            
         }
 
         const loose_edges = []
         let num_loose_edges = 0
         for(let i = 0; i < num_faces;++i){
-           
-            if(dot(faces[i][3],p.substract(faces[i][0])) > 0){
+   
+            if(dot(faces[i][3],diff(p, faces[i][0])) > 0){
                 
                 for(let j = 0; j < 3; j++){
                     let current_edge = [faces[i][j], faces[i][(j + 1) % 3]]
@@ -2390,7 +2801,7 @@ const EPA = (a, b, c, d, body1, body2) =>{
                         if(loose_edges[k][1] === current_edge[0] && loose_edges[k][0] === current_edge[1]){
                             
                             loose_edges[k][0] = loose_edges[num_loose_edges - 1][0]
-                            loose_edges[k][1] = loose_edges[num_loose_edges-1][1]
+                            loose_edges[k][1] = loose_edges[num_loose_edges - 1][1]
                             num_loose_edges --
                             found_edge = true
                             k = num_loose_edges
@@ -2398,7 +2809,7 @@ const EPA = (a, b, c, d, body1, body2) =>{
                     }
                     if(!found_edge){
                         if(num_loose_edges >= MAX_NUM_LOOSE_EDGES) break;
-                       
+                        
                         loose_edges[num_loose_edges] = []
                         loose_edges[num_loose_edges][0] = current_edge[0]
                         loose_edges[num_loose_edges][1] = current_edge[1]
@@ -2420,50 +2831,153 @@ const EPA = (a, b, c, d, body1, body2) =>{
             faces[num_faces][1] = loose_edges[i][1]
             faces[num_faces][2] = p
             
-            faces[num_faces][3] = normalize( cross( loose_edges[i][0].substract(loose_edges[i][1]), loose_edges[i][0].substract(p)))
+            faces[num_faces][3] = normalize( cross( diff(loose_edges[i][0], loose_edges[i][1]), diff(loose_edges[i][0], p)))
+            
             if(dot(faces[num_faces][0], faces[num_faces][3]) + 0.01 < 0){
-                temp = faces[num_faces][0]
+                 temp = faces[num_faces][0]
                 faces[num_faces][0] = faces[num_faces][1]
                 faces[num_faces][1] = temp
-                faces[num_faces][3] = faces[num_faces][3].multiply(-1)
+                faces[num_faces][3] = scale(faces[num_faces][3], -1)
                 
             }
             num_faces++
         }
         
     }
-
-    const face = faces[closest_face]
-
-            const point = originToFaceProj(face)
-            
-            
-            const [Aa, Ba] = originsMap.get(face[0])
-            //const Aa = face[0].oa
-            //const Ba = face[0].ob
-            const [Ab, Bb] = originsMap.get(face[1])
-            //const Ab = face[1].oa
-            //const Bb = face[1].ob
-            const [Ac, Bc] = originsMap.get(face[2])
-            //const Ac = face[2].oa
-            //const Bc = face[2].ob
-           
-            const result = baricentric(face,point)
-            
-            
-            let PA = Aa.multiply(result[0]).add(Ab.multiply(result[1])).add(Ac.multiply(result[2]))
-            let PB = Ba.multiply(result[0]).add(Bb.multiply(result[1])).add(Bc.multiply(result[2]))
-            
-            //const ra = PA.substract(coll1.pos)
-            console.log(face)
-            const rb = PB.substract(coll2.pos)
-            const ra = PA.substract(coll1.pos)
-            const n = face[3].multiply(-dot(p,search_dir))
-            
-            return false
+    console.log('no conv')
+    return false
 
 }
 module.exports = {gjk}
+
+/***/ }),
+
+/***/ "./src/server/manifold.js":
+/*!********************************!*\
+  !*** ./src/server/manifold.js ***!
+  \********************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+const prec = 0.005
+const m3 = __webpack_require__(/*! ../m3 */ "./src/m3.js")
+
+const { distanceFromLine, norm, findFurthestPoint, sum, diff, normSq} = __webpack_require__(/*! ./vector */ "./src/server/vector.js")
+class Manifold{
+    constructor(body1,body2){
+        this.contacts = []
+        this.body1 = body1
+        this.body2 = body2
+        this.warm = 0
+    }
+    addContact(contact){
+        let isFarEnough = true
+        const contacts = this.contacts
+        
+        for(let i = 0, n = contacts.length; i < n; i++){
+            
+            const biasA = diff(contacts[i].PA, contact.PA)
+            const biasB = diff(contacts[i].PB, contact.PB)
+            if(norm(biasA) < 0.5 && norm(biasB) < 0.5 ){
+                 isFarEnough = false
+                
+                 contacts[i] = contact
+            
+            }   
+        }
+        if(isFarEnough) {
+            contacts.push(contact) 
+            
+        }        
+    }
+    update(){
+        let i, j , n
+        const contacts = this.contacts
+        const pos1 = this.body1.collider.pos
+        const pos2 = this.body2.collider.pos
+        for(i = 0, j = 0, n = contacts.length; i < n; i++){
+            const contact = contacts[i]
+
+            const newPA = sum(pos1, m3.transformPoint(this.body1.collider.Rmatrix, contact.raLocal))
+            const newPB = sum(pos2, m3.transformPoint(this.body2.collider.Rmatrix, contact.rbLocal))
+            const raBias = diff(contact.PA, newPA)
+            const rbBias = diff(contact.PB, newPB)
+            
+            
+            if(norm(raBias) < 0.05 && norm(rbBias) < 0.05){
+               /* contact.PA = newPA
+                contact.PB = newPB
+                contact.ra = pos1.substract(newPA)
+                contact.rb = pos2.substract(newPB)
+                contact.raLocal = new Vector(...m3.transformPoint(this.body1.collider.RmatrixInverse,contact.ra.toArray()))
+                contact.rbLocal = new Vector(...m3.transformPoint(this.body2.collider.RmatrixInverse,contact.rb.toArray()))
+                contact.accI = 0*/
+                contacts[j] = contacts[i]
+                            
+               j++
+            }
+          
+        }
+        
+        while(j < contacts.length){
+            contacts.pop()
+        }
+        if(contacts.length > 2) this.warm ++
+        if(contacts.length < 3 ) this.warm = 0
+        if(contacts.length > 4){
+            let deepest = null
+            let maxDeep = 0
+            for(i = 0, n = contacts.length; i < n; i++){
+                if(normSq(contacts[i].n) >= maxDeep){
+                    maxDeep = normSq(contacts[i].n)
+                    deepest = contacts[i]
+                }
+            }
+            let furthest = null
+            let maxDistance = 0
+            for(i = 0, n = contacts.length; i < n; i++){
+                let dist = normSq(diff(contacts[i].PA, deepest.PA))
+                if(dist >= maxDistance){
+                    maxDistance = dist
+                    furthest = contacts[i]
+                }
+            }
+            let furthest2 = null
+            maxDistance = 0
+            for(i = 0, n = contacts.length; i < n; i++){
+                let dist = distanceFromLine(furthest.PA, deepest.PA, contacts[i].PA)
+                
+                if(dist >= maxDistance){
+                    maxDistance = dist
+                    furthest2 = contacts[i]
+                }
+            }
+            
+            let furthest3 = null
+            maxDistance = 0
+           
+            const oppositeTodiagonal = findFurthestPoint(deepest.PA,furthest.PA,furthest2.PA)
+            
+            for(i = 0, n = contacts.length; i < n; i++){
+                let dist = normSq(diff(oppositeTodiagonal, contacts[i].PA))
+                
+                if(dist >= maxDistance){
+                    maxDistance = dist
+                    furthest3 = contacts[i]
+                }
+            }
+           
+
+            contacts[0] = deepest
+            contacts[1] = furthest
+            contacts[2] = furthest2
+            contacts[3] = furthest3
+            while(contacts.length > 4) contacts.pop()
+            
+        }        
+    }
+}
+module.exports = {Manifold}
 
 /***/ }),
 
@@ -2476,8 +2990,11 @@ module.exports = {gjk}
 
 
 const {EventEmitter}  = __webpack_require__(/*! ./eventEmitter */ "./src/server/eventEmitter.js")
-const {Vector} = __webpack_require__(/*! ./vectors */ "./src/server/vectors.js")
+const { cross, scale, norm, sum, diff, chkV } = __webpack_require__(/*! ./vector */ "./src/server/vector.js")
+const m3 = __webpack_require__(/*! ../m3 */ "./src/m3.js")
+const { AABB } = __webpack_require__(/*! ./aabb */ "./src/server/aabb.js")
 const prec = 0.01
+const stopTreshold = 0.001
 class Physics extends EventEmitter{
     constructor(collider){
         super()
@@ -2485,75 +3002,114 @@ class Physics extends EventEmitter{
         this.collider = collider
         this.mass = 1
         this.inverseMass = 1/this.mass
-        this.velocity = new Vector(0, 0, 0)
-        this.acceleration = new Vector(0,0,0)
-        this.angularV = new Vector(0, 0, 0)
+        this.velocity = [0, 0, 0]
+        this.pseudoVelocity = [0, 0, 0]
+        this.pseudoAngularV = [0, 0, 0]
+        this.acceleration = [0, 0, 0]
+        this.angularV = [0, 0, 0]
+        this.inverseInertia = collider.getInverseInertiaTensor(this.mass)
         this.id = 1
-        this.acceleration = new Vector(0,0,0)
+        this.friction = 0.1
         this.BVlink
     }
-    update(dt){
-        let deltaSpeed = this.acceleration.multiply(dt)
-        this.velocity = this.velocity.add( deltaSpeed)
+    
+    integratePseudoVelocities(dt){
+        const translation = scale(this.pseudoVelocity, dt)
         
-        const translation = this.velocity.multiply(dt)
-        this.translate(translation.x, translation.y, translation.z)
-        const deltaRotation = this.angularV.multiply(dt)
-        this.rotate(deltaRotation.x, deltaRotation.y, deltaRotation.z)
+        const rotation = scale(this.pseudoAngularV, dt*0.5)
+        if(norm(translation) > stopTreshold)
+        this.translate(translation)
+
+        if(norm(rotation) > stopTreshold)
+        this.rotate(rotation)
         
-        this.emit('update')
-        return this
+        this.pseudoVelocity = [0, 0, 0]
+        this.pseudoAngularV = [0, 0, 0]
     }
-    getInverseInertiaTensor(){
-        return this.collider.getInverseInertiaTensor(this.mass)
+    addPseudoVelocity(v){
+        this.pseudoVelocity = sum(this.pseudoVelocity, v)
     }
+    addPseudoAngularV(v){
+        this.pseudoAngularV = sum(this.pseudoAngularV, v)
+    }
+    integrateVelocities(dt){
+        const translation = scale(this.velocity, dt)
+        if(norm(translation) > stopTreshold)
+        this.translate(translation)
+        const rotation = scale(this.angularV, dt*0.5)
+        if(norm(translation) > stopTreshold)
+        this.rotate(rotation)
+        
+        
+    }
+    integrateForces(dt){
+
+
+        let deltaSpeed = scale(this.acceleration, dt)
+        this.velocity = sum(this.velocity, deltaSpeed)
+        
+        
+    }
+    updateInverseInertia(){
+        this.inverseInertia = this.collider.getInverseInertiaTensor(this.mass)
+    }
+    
     setMass(mass){
         this.mass = mass
         this.inverseMass = 1 / this.mass
         
     }
-    translate(tx,ty,tz){
+    translate(translation){
         
-        this.collider.translate(tx,ty,tz)
+        this.collider.translate(translation)
 
-        this.emit('translation')
-        return this
+        this.emit('update')
+       
     }
-    rotate(ax,ay,az){
+    rotate(rotation){
         
-        this.collider.rotate(ax,ay,az)
+        this.collider.rotate(rotation)
 
-        this.emit('rotation')
-        return this
+        this.emit('update')
+        
         
     }
-    
+    applyImpulse(impulse, point){
+        this.velocity = sum(this.velocity, scale(impulse, this.inverseMass))
+        const angularImpulse = m3.transformPoint(this.inverseInertia, cross( point, impulse))
+        this.angularV = sum(this.angularV, angularImpulse)
+    }
+    applyPseudoImpulse(impulse, point){
+        this.pseudoVelocity = sum(this.pseudoVelocity, scale(impulse, this.inverseMass))
+        const angularImpulse = m3.transformPoint(this.inverseInertia, cross( point, impulse))
+        this.pseudoAngularV = sum(this.pseudoAngularV, angularImpulse)
+    }
     addVelocity(v){
+        chkV(v)
         if(this.static)return
-        this.velocity = this.velocity.add(v)
+        this.velocity = sum(this.velocity, v)
     }
     addAngularV(v){
+        chkV(v)
         if(this.static)return
-        this.angularV = this.angularV.add(v)
+        this.angularV = sum(this.angularV, v)
     }
     addAcceleration(v){
-        this.acceleration = this.acceleration.add(v)
+        this.acceleration = sum(this.acceleration, v)
     }
     getExpandedAABB(){
         const aabb = this.collider.getAABB()
         const velocity = this.velocity
-        aabb[0].x -= prec
-        aabb[1].x += prec
-        aabb[0].y -= prec
-        aabb[0].z -= prec
-        aabb[1].y += prec
-        aabb[1].z += prec
-        if(velocity.x > 10) aabb[1].x += velocity.x
-        if(velocity.y > 10) aabb[1].y += velocity.y
-        if(velocity.z > 10) aabb[1].z += velocity.z
-        if(velocity.x < -10) aabb[0].x -= velocity.x
-        if(velocity.y < -10) aabb[0].y -= velocity.y
-        if(velocity.z < -10) aabb[0].z -= velocity.z
+        const tr = [prec, prec, prec]
+        aabb.min = diff(aabb.min, tr)
+        aabb.max = sum(aabb.max, tr)
+        
+        /*if(velocity[0] > 10) aabb.max[0] += velocity[0]
+        if(velocity[1] > 10) aabb.max[1] += velocity[1]
+        if(velocity[2] > 10) aabb.max[2] += velocity[2]
+        if(velocity[0] < -10) aabb.min[0] += velocity[0]
+        if(velocity[1] < -10) aabb.min[1] += velocity[1]
+        if(velocity[2] < -10) aabb.min[2] += velocity[2]*/
         return aabb
     }
     getAABB(){
@@ -2562,8 +3118,20 @@ class Physics extends EventEmitter{
     
 }
 
-
-module.exports = {Physics}
+class Player extends Physics{
+    constructor(){
+        super(...arguments)
+        this.friction = 10
+    }
+    applyImpulse(impulse, point){
+        this.velocity = sum(this.velocity, scale(impulse, this.inverseMass))
+        
+    }
+    applyPseudoImpulse(impulse){
+        this.pseudoVelocity = sum(this.pseudoVelocity, scale(impulse, this.inverseMass))
+    }
+}
+module.exports = {Physics, Player}
 
 /***/ }),
 
@@ -2577,11 +3145,11 @@ module.exports = {Physics}
 
 const {Tree} = __webpack_require__(/*! ./tree */ "./src/server/tree.js")
 
-const {getCollisionResolution, warmStart} = __webpack_require__(/*! ./constraints */ "./src/server/constraints.js")
+const {solveCollision, solveContactPositionErr, warmStart, solvePosition} = __webpack_require__(/*! ./constraints */ "./src/server/constraints.js")
 const {gjk} = __webpack_require__(/*! ./gjk */ "./src/server/gjk.js")
-const { distanceFromLine, findLargestFace} = __webpack_require__(/*! ./vectors */ "./src/server/vectors.js")
 
-const prec = 0.01
+const {Manifold} = __webpack_require__(/*! ./manifold */ "./src/server/manifold.js")
+const prec = 0.3
 const pairHash = (x,y) => x === Math.max(x, y) ? x * x + x + y : y * y + x
 
 
@@ -2593,6 +3161,7 @@ class Simulation {
         this.objects = []
         this.bvh = new Tree()
         this.collisions = []
+        this.constrains = []
         this.collisionManifolds = new Map()
         this.lastId = 0
     }
@@ -2605,8 +3174,8 @@ class Simulation {
             object.BVlink = leaf
             object.id = this.lastId
             this.lastId++
-            object.on('translation',()=>this.updateObjectAABB.call(this,object))
-            object.on('rotate',()=>this.updateObjectAABB.call(this,object))
+            object.on('update',()=>this.updateObjectAABB.call(this,object))
+            
             this.objects.push(object)
 
     }
@@ -2614,18 +3183,15 @@ class Simulation {
     
     updateObjectAABB(object){
         
-        const oldAABB = object.BVlink.aabb
-      
+        
+       
         const newAABB = object.getAABB()
         
-        if(newAABB[0].x < oldAABB[0].x || newAABB[1].x > oldAABB[1].x ||
-             newAABB[0].y < oldAABB[0].y || newAABB[1].y> oldAABB[1].y ||
-             newAABB[0].z < oldAABB[0].z || newAABB[1].z > oldAABB[1].z)
-        {
+       
            this.bvh.removeLeaf(object.BVlink)
            const leaf = this.bvh.insertLeaf(newAABB,object)
            object.BVlink = leaf
-        }
+        
     }
     removeObject(object){
         this.bvh.removeLeaf(object.BVlink)
@@ -2633,111 +3199,45 @@ class Simulation {
     }
     updateCollisions(){
         const manifolds = this.collisionManifolds.values()
-        for(let manifold of manifolds){
+        /*for(let manifold of manifolds){
             
-            let i, j , n
-            const contacts = manifold.contacts
-            const pos1 = manifold.body1.collider.pos
-            const pos2 = manifold.body2.collider.pos
-            for(i = 0, j = 0, n = contacts.length; i < n; i++){
-                const contact = contacts[i]
-                const newPA = pos1.add(contact.ra)
-                const newPB = pos2.add(contact.rb)
-                const raBias = contact.PA.substract(newPA)
-                const rbBias = contact.PB.substract(newPB)
-                if(raBias.norm() < prec + manifold.warm * 0.001  && rbBias.norm() <  prec +manifold.warm * 0.001){
-                    contacts[j] = contacts[i]
-                   j++
-                }
-                
-            }
             
-            while(j < contacts.length){
-                contacts.pop()
-            }
             
-            if(contacts.length < 4&& manifold.warm  > 1) manifold.warm--
-            if(contacts.length === 4 && manifold.warm < 5)manifold.warm ++
-            if(contacts.length > 4){
-                let deepest = null
-                let maxDeep = 0
-                for(i = 0, n = contacts.length; i < n; i++){
-                    if(contacts[i].n.normSq() >= maxDeep){
-                        maxDeep = contacts[i].n.normSq()
-                        deepest = contacts[i]
-                    }
-                }
-                let furthest = null
-                let maxDistance = 0
-                for(i = 0, n = contacts.length; i < n; i++){
-                    let dist = contacts[i].PA.substract(deepest.PA).normSq()
-                    if(dist >= maxDistance){
-                        maxDistance = dist
-                        furthest = contacts[i]
-                    }
-                }
-                let furthest2 = null
-                maxDistance = 0
-                for(i = 0, n = contacts.length; i < n; i++){
-                    let dist = distanceFromLine(furthest.PA, deepest.PA, contacts[i].PA)
-                    
-                    if(dist >= maxDistance){
-                        maxDistance = dist
-                        furthest2 = contacts[i]
-                    }
-                }
-                
-                let furthest3 = null
-                maxDistance = 0
-               
-                const oppositeTodiagonal = findLargestFace(deepest.PA,furthest.PA,furthest2.PA)
-                
-                for(i = 0, n = contacts.length; i < n; i++){
-                    let dist = oppositeTodiagonal.substract(contacts[i].PA).normSq()
-                    
-                    if(dist >= maxDistance){
-                        maxDistance = dist
-                        furthest3 = contacts[i]
-                    }
-                }
-               
-
-                contacts[0] = deepest
-                contacts[1] = furthest
-                contacts[2] = furthest2
-                contacts[3] = furthest3
-                while(contacts.length > 4) contacts.pop()
-                
-            }
+            if(contacts.length < 4 ) manifold.warm = 0
+            if(contacts.length ===  4 && manifold.warm < 20)manifold.warm ++
+            
             
 
-        }
+        }*/
         for(let i = 0, n = this.objects.length; i < n; i++){
             const object = this.objects[i]
             if(object.static) continue
             const cols = this.bvh.getCollisions(object.BVlink)
             object.BVlink.isChecked = true
-            
+            if(cols.length !=0) 
             for(let j = 0, n = cols.length; j < n; j++){
                 const hash = pairHash(object.id, cols[j].id)
                 let manifold = this.collisionManifolds.get(hash)
-                if(manifold && manifold.contacts.length > 4) continue
+                //if(manifold && manifold.contacts.length > 4) continue
                 const contact = gjk(object, cols[j])
-                if(!contact) continue
-                
-                
+               
+                if(!contact){
+                   
+                    if(manifold) this.collisionManifolds.delete(hash)
+                    continue
+                }
+               
                 if(!manifold){
-                    manifold = { contacts : [], body1 : object, body2 : cols[j], warm : 0}
+                    
+                    manifold = new Manifold(object, cols[j])
+                    manifold.contacts = [contact]
+                   
+                   
                     this.collisionManifolds.set(hash,manifold)
+                   
                 }
-                let isFarEnough = true
-                const contacts = manifold.contacts
-                for(let i = 0, n = contacts.length; i < n; i++){
-                    const biasPA = contacts[i].PA.substract(contact.PA)
-                    const biasPB = contacts[i].PB.substract(contact.PB)
-                    if(biasPA.norm() < prec || biasPB.norm() < prec) isFarEnough = false 
-                }
-                if(isFarEnough) contacts.push(contact)   
+                else manifold.addContact(contact)
+                
             }
         }
         
@@ -2745,38 +3245,62 @@ class Simulation {
         
     }
     tick(deltaTime){
-        
-        for(let i = 0, n = this.objects.length;i < n; i++){
-            this.objects[i].update(deltaTime)
-        }   
         this.updateCollisions()
-        
-        this.cols = []
         let manifolds = this.collisionManifolds.values()
+        for(let manifold of manifolds)
+            manifold.update()
+
+        for(let i = 0, n = this.objects.length;i < n; i++){
+            this.objects[i].integrateForces(deltaTime)
+        }  
         
         
-        
-       
+        manifolds = this.collisionManifolds.values()
             for(let manifold of manifolds){
                 const contacts = manifold.contacts
-                
-                /*if(contacts.length > 0){
-                    const deepest = contacts[0]
-                    manifold.body1.translate(...deepest.n.multiply(-1/manifold.body1.mass).toArray())
-                    manifold.body2.translate(...deepest.n.multiply(1/manifold.body2.mass).toArray())
-                }   */
-
-
-                if(manifold.warm > 1){
-                    warmStart(manifold, deltaTime)
+                for(let i = 0, n = contacts.length; i < n; i++){
+                    contacts[i].updateEq()
+                }
+            }
+        this.constrains.forEach(constraint => constraint.updateEq())
+           
+        
+        for(let i = 0; i < 7; i++){
+            let manifolds = this.collisionManifolds.values()
+            for(let manifold of manifolds){
+                const contacts = manifold.contacts
+                if(manifold.warm > 7){
+                 //warmStart(manifold, deltaTime)
                    
                 }   
-                getCollisionResolution(manifold, deltaTime) 
+                solveCollision(manifold, deltaTime)
                 
+            }
+            this.constrains.forEach(constraint => solveConstraint(constraint, deltaTime))   
+            this.constrains.forEach(constraint => solvePosition(constraint, deltaTime))
+        }
+
+        
+
+        for(let i = 0, n = this.objects.length;i < n; i++){
+            this.objects[i].integrateVelocities(deltaTime)    
+        }
+        for(let i = 0; i <7; i++){
+            let manifolds = this.collisionManifolds.values()
+            for(let manifold of manifolds){
+                const contacts = manifold.contacts
+                contacts.forEach(c => solveContactPositionErr(c, deltaTime, contacts.length))
                 
-                
+            }
+             
             
         }
+       //for(let i = 0; i<4; i++)
+        
+        for(let i = 0, n = this.objects.length;i < n; i++){
+            this.objects[i].integratePseudoVelocities(deltaTime)
+            this.objects[i].updateInverseInertia()
+        }  
         
     }
 }
@@ -2794,29 +3318,35 @@ module.exports = {Simulation}
 
 
 
-const {Vector} = __webpack_require__(/*! ./vectors */ "./src/server/vectors.js")
+const {Vector} = __webpack_require__(/*! ./vector */ "./src/server/vector.js")
+const {AABB} = __webpack_require__(/*! ./aabb */ "./src/server/aabb.js")
 const getBoundAabb = (aabb1, aabb2)=>{
     if(!aabb1 || !aabb2){
         return 0
     }
-    const x1 = aabb1[0].x < aabb2[0].x ? aabb1[0].x : aabb2[0].x
-    const x2 = aabb1[1].x > aabb2[1].x ? aabb1[1].x : aabb2[1].x
-    const y1 = aabb1[0].y < aabb2[0].y ? aabb1[0].y : aabb2[0].y
-    const y2 = aabb1[1].y > aabb2[1].y ? aabb1[1].y : aabb2[1].y
-    const z1 = aabb1[0].z < aabb2[0].z ? aabb1[0].z : aabb2[0].z
-    const z2 = aabb1[1].z > aabb2[1].z ? aabb1[1].z : aabb2[1].z
-    return [new Vector(x1 , y1,z1), new Vector(x2, y2, z2)]
+    const x1 = aabb1.min[0] < aabb2.min[0] ? aabb1.min[0] : aabb2.min[0]
+    const x2 = aabb1.max[0] > aabb2.max[0] ? aabb1.max[0] : aabb2.max[0]
+    const y1 = aabb1.min[1] < aabb2.min[1] ? aabb1.min[1] : aabb2.min[1]
+    const y2 = aabb1.max[1] > aabb2.max[1] ? aabb1.max[1] : aabb2.max[1]
+    const z1 = aabb1.min[2] < aabb2.min[2] ? aabb1.min[2] : aabb2.min[2]
+    const z2 = aabb1.max[2] > aabb2.max[2] ? aabb1.max[2] : aabb2.max[2]
+    return new AABB([x1, y1, z1], [x2, y2, z2])
 }
 const isCollide = (aabb1,aabb2) => {
-      
-    if(aabb1[0].x <= aabb2[1].x && aabb1[1].x >= aabb2[0].x && aabb1[0].y <= aabb2[1].y && aabb1[1].y >= aabb2[0].y && aabb1[0].z <= aabb2[1].z && aabb1[1].z >= aabb2[0].z){
+    if(aabb1.min[0] <= aabb2.max[0]
+    && aabb1.max[0] >= aabb2.min[0]
+    && aabb1.min[1] <= aabb2.max[1] 
+    && aabb1.max[1] >= aabb2.min[1] 
+    && aabb1.min[2] <= aabb2.max[2] 
+    && aabb1.max[2] >= aabb2.min[2])  
+    {
         return true
     }
     return false
 }
 const getSize = (aabb) => {
-    const area = Math.abs(aabb[1].x - aabb[0].x) + Math.abs(aabb[1].y - aabb[0].y) + Math.abs(aabb[1].z - aabb[0].z)
-    return area > 0 ? area : - area
+    const area = Math.abs(aabb.max[0] - aabb.min[0]) * Math.abs(aabb.max[1] - aabb.min[1]) * Math.abs(aabb.max[2] - aabb.min[2])
+    return area 
 }
 class Node{
     constructor(aabb,isLeaf,gameObject){
@@ -2978,6 +3508,7 @@ class Tree{
         }
     }
     rebalance(leaf){
+       
         if(!leaf){
             return null
         }
@@ -3084,87 +3615,65 @@ class Tree{
         }
         return iter(leaf,1)
     }
+    getNodes(){
+        const iter = (node, arr) =>{
+            arr.push(node)
+            if(node.child1) iter(node.child1, arr)
+            if(node.child2) iter(node.child2, arr)
+        }
+        const a = []
+        iter(this.root, a)
+        return a
+    }
     
 }
 module.exports = {Tree, Node}
 
 /***/ }),
 
-/***/ "./src/server/vectors.js":
-/*!*******************************!*\
-  !*** ./src/server/vectors.js ***!
-  \*******************************/
+/***/ "./src/server/vector.js":
+/*!******************************!*\
+  !*** ./src/server/vector.js ***!
+  \******************************/
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-
-
-function Vector(x = 0, y = 0, z = 0){
-
-    
-    this.x = x
-    this.y = y
-    this.z = z
-}
-
-Vector.prototype.toArray = function(){
-    return [this.x,this.y,this.z]
-}
-const dot = (v1,v2) => v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
-
-const cross = (v1,v2) => new Vector(
-                        v1.y * v2.z - v2.y * v1.z,
-                        v1.z * v2.x - v2.z * v1.x,
-                        v1.x * v2.y - v2.x * v1.y )
-Vector.prototype.add = function(v){
-    return new Vector(this.x + v.x, this.y + v.y, this.z + v.z)
-}
-Vector.prototype.multiply = function(a){
-    return new Vector(this.x * a, this.y * a, this.z * a)
-
-}
-
-Vector.prototype.substract = function(v){
-    return new Vector(this.x - v.x, this.y - v.y, this.z - v.z)
-}
-Vector.prototype.isNull = function(){
-    return this.x * this.x + this.y * this.y + this.z * this.z === 0
-}
-const normalize = v =>{
-    const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
-    return new Vector(v.x / len, v.y / len, v.z / len)
-}
-Vector.prototype.norm = function(){
-    return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z)
-}
-Vector.prototype.normSq = function(){
-    return this.x * this.x + this.y * this.y + this.z * this.z
-}
-const distanceFromLine = (a,b,c) =>{
-    const ac = c.substract(a)
-    const ab = b.substract(a)
-    const k = dot(ab,ac) / ab.normSq()
-    const h = a.add(ab.multiply(k))
-    return c.substract(h).normSq()
-}
-const distanceFromTriangle = (a,b,c,d) =>{
-    const h1 = distanceFromLine(a,b,d)
-    const h2 = distanceFromLine(a,c,d)
-    const h3 = distanceFromLine(b,c,d)
-    if(h1 < h2){
-        if(h1 < h3) return h1
-        return h3
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const cross = (a, b) => {
+    const res = [
+                            a[1] * b[2] - b[1] * a[2],
+                            a[2] * b[0] - b[2] * a[0],
+                            a[0] * b[1] - b[0] * a[1]    
+                    ]
+    if(isNaNvec(a) || isNaNvec(b)){
+        console.log(a, b)
+        throw new Error('args is NaN : ,')
     }
-    else{
-        if(h2 < h3) return h2
-        else return h3
+    return res
+}          
+const scale = (a, scalar) => [a[0] * scalar, a[1] * scalar, a[2] * scalar]
+const sum = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+const diff = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+const norm = a => Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2])
+const normSq = a => a[0] * a[0] + a[1] * a[1] + a[2] * a[2]
+const normalize = a => {
+    const length = norm(a)
+    if(length === 0) return a
+    return [a[0] / length, a[1] / length, a[2] / length]
+}
+const isNull = a => a[0]*a[0] + a[1] * a[1] + a[2] * a[2] === 0
+
+const chkV = (v) =>{
+    if(isNaNvec(v)){
+        console.log(v)
+        throw new Error('NaN Vec')
     }
 }
 
-const findLargestFace = (a,b,c) => {
-    const AB = a.substract(b).normSq()
-    const AC = a.substract(c).normSq()
-    const BC = c.substract(b).normSq()
+const findFurthestPoint = (a,b,c) => {
+    const AB = normSq(diff(a, b))
+    const AC = normSq(diff(a, c))
+    const BC = normSq(diff(c, b))
     if(AB < AC){
         if(AB < BC) return c
         return b
@@ -3174,7 +3683,84 @@ const findLargestFace = (a,b,c) => {
         else return a
     }
 }
-module.exports = {Vector, cross, dot, normalize, distanceFromLine, distanceFromTriangle, findLargestFace}
+const distanceFromLine = (a,b,c) =>{
+    const ac = diff(c, a)
+    const ab = diff(b, a)
+    const k = dot(ab,ac) / normSq(ab)
+    const h = sum(a, scale(ab, k))
+    return normSq(diff(c, h))
+}
+
+
+const isNaNvec = v => isNaN(v[0] + v[1] + v[2]) || (v[0] + v[1] + v[2] === Infinity) || (v[0] + v[1] + v[2] === -Infinity)
+const _dot = (a, b) =>{
+    if(isNaNvec(a) || isNaNvec(b)){
+        console.log(a, b)
+        throw new Error('args is NaN : ,')
+    }
+    return dot(a, b)
+}
+const _cross = (a, b) =>{
+    if(isNaNvec(a) || isNaNvec(b)){
+        console.log(a, b)
+        throw new Error('args is NaN : ,')
+    }
+    const res = cross(a, b)  
+    if(isNaNvec(res)){
+        console.log(a, b)
+        throw new Error('get NaN : ,')
+    }
+    return res 
+}
+const _sum = (a, b) =>{
+    if(isNaNvec(a) || isNaNvec(b)){
+        console.log(a, b)
+        throw new Error('args is NaN : ,')
+    }
+    const res = sum(a, b)  
+    if(isNaNvec(res)){
+        console.log(a, b)
+        throw new Error('get NaN : ,')
+    }
+    return res 
+}
+const _diff = (a, b) =>{
+    if(isNaNvec(a) || isNaNvec(b)){
+        console.log(a, b)
+        throw new Error('args is NaN : ,')
+    }
+    const res = diff(a, b)  
+    if(isNaNvec(res)){
+        console.log(a, b)
+        throw new Error('get NaN : ,')
+    }
+    return res    
+}
+const _scale = (a, scalar) =>{
+    if(isNaNvec(a) || isNaN(scalar)){
+        console.log(a, scalar)
+        throw new Error('args is NaN : ,')
+    }
+    const res = scale(a, scalar)  
+    if(isNaNvec(res)){
+        console.log(a, scalar)
+        throw new Error('get NaN : ,')
+    }
+    return res 
+}
+const _normalize = a =>{
+    if(isNaNvec(a)){
+        console.log(a)
+        throw new Error('args is NaN : ,')
+    }
+    const res = normalize(a)  
+    if(isNaNvec(res)){
+        console.log(a)
+        throw new Error('get NaN : ,')
+    }
+    return res 
+}
+module.exports = {chkV, dot : _dot, cross : _cross, scale : _scale, sum : _sum, diff : _diff, normalize : _normalize, norm, normSq, isNull, findFurthestPoint, distanceFromLine}
 
 /***/ })
 

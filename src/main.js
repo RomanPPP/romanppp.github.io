@@ -1,10 +1,13 @@
 const {drawScene, drawPoints, drawLines, resizeCanvasToDisplaySize} = require('./render/render')
 const m4 = require('./m4')
-
+const {sum, diff, scale} = require('./server/vector')
 const {makeEntity} = require('./game/entity')
-const {box} = require('./game/objects')
-
-const cPos = [0,2,25]
+const {box, player} = require('./game/objects')
+const {BoxSprite} = require('./render/sprites')
+const AABBsprite = new BoxSprite()
+const bbox = {sprite : AABBsprite, worldMatrix : m4.identity()}
+const {Joint} = require('./server/contact')
+const cPos = [0,2,5]
 const cRot = [0,0,0]
 const controls = {
     ArrowDown : ()=> cRot[0] -= 0.1 ,
@@ -73,64 +76,31 @@ const sim = new Simulation()
 
 
 
-const { Vector } = require('./server/vectors')
+
+const { Box } = require('./server/collider')
+const { AABB } = require('./server/aabb')
 const objectsToDraw = []
 const floor = makeEntity(box)
-const floor2 = makeEntity(box)
-const wallN = makeEntity(box)
-const wallS = makeEntity(box)
-const wallW = makeEntity(box)
-const wallE = makeEntity(box)
 
 
 floor.updateObjectsToDraw()
 sim.addObject(floor.physics)
-floor.physics.collider.min = new Vector(-30,-2,-30)
-floor.physics.collider.max = new Vector(30,2,30)
+floor.physics.collider.min = [-30, -2, -30]
+floor.physics.collider.max = [30,2,30]
 
 
 floor.renderNode.localMatrix = m4.scaling(60,4,60)
-floor.physics.setMass(100000000)
-
-floor2.updateObjectsToDraw()
-sim.addObject(floor2.physics)
-floor2.physics.collider.min = new Vector(-10,-10,-10)
-floor2.physics.collider.max = new Vector(10,10,10)
-floor2.renderNode.localMatrix = m4.scaling(20,20,20)
-floor2.physics.setMass(100000000)
-
-let entities = [wallN, wallE, wallW, wallS]
-entities.forEach(wall =>{
-    wall.updateObjectsToDraw()
-    objectsToDraw.push(...wall.objectsToDraw)
-    sim.addObject(wall.physics)
-    wall.physics.setMass(100000000)
-    wall.physics.static = true
-    wall.physics.collider.min = new Vector(-30,-2,-30)
-    wall.physics.collider.max = new Vector(30,2,30)
-    wall.renderNode.localMatrix = m4.scaling(60,4,60)
-})
-entities.push(floor, floor2)
-floor.physics.translate(0,-2,0)
-floor.physics.static = true
-floor2.physics.static = true
-
-floor2.physics.translate(10,0,0)
-floor2.physics.rotate(Math.PI/4,0,0)
-wallN.physics.translate(0,0,30)
-wallN.physics.rotate(Math.PI/2,0,0)
-
-wallS.physics.translate(0,0,-30)
-wallS.physics.rotate(Math.PI/2,0,0)
-
-wallW.physics.translate(30,0,0)
-wallW.physics.rotate(0,0, Math.PI/2)
-
-wallE.physics.translate(-30,0,0)
-wallE.physics.rotate(0,0, Math.PI/2)
+floor.physics.setMass(100000000000)
 
 
-objectsToDraw.push(...floor.objectsToDraw, ...floor2.objectsToDraw)
+
+let entities = []
+
+entities.push(floor)
+floor.physics.translate([0,-2,0])
+floor.physics.rotate([0.0,0,0])
+
+objectsToDraw.push(...floor.objectsToDraw,)
 
 let cameraMatrix = m4.translation(...cPos)
 cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
@@ -147,40 +117,130 @@ controls[' '] = () =>{
     sim.addObject(cube.physics)
     
     cube.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
-    cube.physics.translate(...cPos)
+    cube.physics.translate(cPos)
     
     let Rm = m4.yRotation(cRot[1])
     Rm = m4.xRotate(Rm, cRot[0])
     
     const vel = m4.transformPoint(Rm, [0,0,-20])
     
-    cube.physics.addVelocity(new Vector(...vel))
-    cube.physics.addAcceleration(new Vector(0,-9.8,0))
-    
+    cube.physics.addVelocity(vel)
+    cube.physics.addAcceleration([0, -9.8, 0])
+    console.log(cube)
 
 }
- 
-resizeCanvasToDisplaySize(gl.canvas, 1)
+for(let i = 0; i < 0;i++){
+    const cube = makeEntity(box)
+    cube.updateObjectsToDraw()
+    entities.push(cube)
+    objectsToDraw.push(...cube.objectsToDraw)
+    sim.addObject(cube.physics)
+    cube.physics.collider.min = [-3, -2, -3]
+    cube.physics.collider.max = [3, 2, 3]
+    cube.renderNode.localMatrix = m4.scaling(6,4,6)
+    cube.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+    cube.physics.translate([0,4 + i * 4,0])
+    cube.physics.addAcceleration([0, -9.8, 0])
+    cube.physics.rotate([0.5, 0.5, 0])
+    console.log(cube)
+}
+const Player = makeEntity(player)
+Player.updateObjectsToDraw()
+entities.push(Player)
+objectsToDraw.push(...Player.objectsToDraw)
+sim.addObject(Player.physics)
+Player.physics.collider.min = [-1, -2, -1]
+Player.physics.collider.max = [1, 2, 1]
+Player.renderNode.localMatrix = m4.scaling(2,4,2)
+Player.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+Player.physics.translate([0,4 + 2 * 4,0])
+Player.physics.addAcceleration([0, -9.8, 0])
 
-const loop = () =>{
+
+
+for(let i = 0; i < 2;i++){
+    const cube = makeEntity(box)
+    cube.updateObjectsToDraw()
+    cube.physics.collider.min = [-0.5, -2, -0.5]
+    cube.physics.collider.max = [0.5, 2, 0.5]
+    cube.renderNode.localMatrix = m4.scaling(1,4,1)
+    entities.push(cube)
+    objectsToDraw.push(...cube.objectsToDraw)
+    sim.addObject(cube.physics)
+    cube.physics.translate([0, i * 4.5 + 4, 0])
+    cube.physics.addAcceleration([0, -9.8, 0])
+    
+    sim.constrains.push(new Joint([ (-1)**(i %2 )*2, 0, 0], [0, 2, 0], Player.physics, cube.physics))
+    //sim.constrains.push(new Joint([ (-1)**(i %2 )*2, -4, 0], [0, -2, 0], Player.physics, cube.physics))
+}
+    //sim.constrains.push(new Joint([0,5,0], [0,14,0], Player.physics, floor.physics))
+    //cube.physics.rotate(1,2,0)
+   
+
+    /*const cube2 = makeEntity(box)
+    cube2.updateObjectsToDraw()
+    entities.push(cube2)
+    objectsToDraw.push(...cube2.objectsToDraw)*/
+    //sim.addObject(cube2.physics)
+    //cube2.physics.setMass(1000)
+    //cube2.physics.collider.min = new Vector(-0.1,-0.1,-0.1)
+    //cube2.physics.collider.max = new Vector(0.1,0.1,0.1)
+    //cube2.renderNode.localMatrix = m4.scaling(0.2,0.2,0.2)
+    
+    //cube2.renderNode.sprite.uniforms.u_color = [0.2,0.3,0.4,1]
+    //cube2.physics.translate([0,10,0])
+    
+    //cube2.physics.setMass(10)
+    //cube2.physics.addAcceleration([0, -9.8, 0])
+resizeCanvasToDisplaySize(gl.canvas, 1)
+controls['p'] = () => {
+    sim.tick(0.015)
     
    
+}
+const loop = () =>{
+    
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.CULL_FACE)
+    gl.enable(gl.DEPTH_TEST)
     
     entities.forEach(entity => entity.updateWorldMatrix())
     sim.tick(0.016)
+
+    
     cameraMatrix = m4.translation(...cPos)
     cameraMatrix = m4.yRotate(cameraMatrix, cRot[1])
     cameraMatrix = m4.xRotate(cameraMatrix, cRot[0])
     
     const manifolds = sim.collisionManifolds.values()
     const cols = []
+    
     for(let manifold of manifolds)cols.push(...manifold.contacts)
+    
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.CULL_FACE)
-    gl.enable(gl.DEPTH_TEST)
+    
     drawScene(objectsToDraw, cameraMatrix, uniforms)
-   
+
+    
+    
+    /*sim.bvh.getNodes().forEach(node => {
+        
+        const tr = scale(sum(node.aabb.min, node.aabb.max),0.5)
+        const scaling = diff(node.aabb.max, node.aabb.min)
+        bbox.worldMatrix = m4.scale(m4.translation(...tr), ...scaling)
+        drawScene([bbox], cameraMatrix, uniforms)
+        drawPoints([m4.translation(...node.aabb.min), m4.translation(...node.aabb.max),], [0.0,0.5,0.4,1], cameraMatrix)
+    })*/
+    
+    //drawPoints(aabbs.map(aabb => m4.translation(...aabb.min)), [0.1,0.0,0.4,1], cameraMatrix)
+    //drawPoints(aabbs.map(aabb => m4.translation(...aabb.max)), [0.1,0.0,0.4,1], cameraMatrix)
+    drawPoints(cols.map(col => m4.translation(...col.PA)), [0.2,0.3,0.4,1], cameraMatrix)
+    drawPoints(cols.map(col => m4.translation(...col.PB)), [0.0,0.5,0.4,1], cameraMatrix)
+    drawPoints(sim.constrains.map(c => m4.translation(...c.PA)), [0.0,0.5,0.4,1], cameraMatrix)
+    drawPoints(sim.constrains.map(c => m4.translation(...c.PB)), [1.0,0.5,0.4,1], cameraMatrix)
+    
+    
+
     requestAnimationFrame(loop)
 
 

@@ -1,46 +1,45 @@
 
 
-const {Vector} = require('./vectors')
-const {EventEmitter} = require('./eventEmitter')
+const {scale, sum} = require('./vector')
+
 const m4 = require('../m4')
 const m3 = require('../m3')
-const xAxis = new Vector(1,0,0)
-const yAxis = new Vector(0,1,0)
-const zAxis = new Vector(0,0,1)
-const xAxisNegative = xAxis.multiply(-1)
-const yAxisNegative = yAxis.multiply(-1)
-const zAxisNegative = zAxis.multiply(-1)
-const dirs = [xAxis,yAxis,zAxis,xAxisNegative,yAxisNegative, zAxisNegative]
+const { AABB } = require('./aabb')
+const xAxis = [1, 0, 0]
+const yAxis = [0, 1, 0]
+const zAxis = [0, 0, 1]
+const xAxisNegative = scale(xAxis, -1)
+const yAxisNegative = scale(yAxis, -1)
+const zAxisNegative = scale(zAxis, -1)
 
-class Box extends EventEmitter{
+
+class Box{
     constructor(a = 1,b = 1,c = 1){
-        super()
-        this.min = new Vector(-a/2,-b/2,-c/2)
-        this.max = new Vector(a/2,b/2,c/2)
+        
+        this.min = [-a/2, -b/2, -c/2]
+        this.max = [a/2, b/2, c/2]
         this.Rmatrix = m3.identity()
         this.RmatrixInverse = m3.identity()
         this.RS = m3.identity()
-        this.pos = new Vector(0,0,0)
+        this.pos = [0, 0, 0]
     }
     getAABB(){
-        const maxX = this.support(xAxis).x
-        const maxY = this.support(yAxis).y
-        const maxZ = this.support(zAxis).z
+        const maxX = this.support(xAxis)[0]
+        const maxY = this.support(yAxis)[1]
+        const maxZ = this.support(zAxis)[2]
 
-        const minX = this.support(xAxisNegative).x
-        const minY = this.support(yAxisNegative).y
-        const minZ = this.support(zAxisNegative).z
-        return [new Vector(minX, minY, minZ), new Vector(maxX, maxY, maxZ)]
+        const minX = this.support(xAxisNegative)[0]
+        const minY = this.support(yAxisNegative)[1]
+        const minZ = this.support(zAxisNegative)[2]
+        return new AABB([minX, minY, minZ], [maxX, maxY, maxZ])
     }
-    translate(tx,ty,tz){
-        this.pos.x += tx
-        this.pos.y += ty
-        this.pos.z += tz
+    translate(t){
+        this.pos = sum(this.pos, t)
     }
-    rotate(ax,ay,az){
-        this.Rmatrix = m3.xRotate(this.Rmatrix, ax)
-        this.Rmatrix = m3.yRotate(this.Rmatrix, ay)
-        this.Rmatrix = m3.zRotate(this.Rmatrix, az)
+    rotate(r){
+        this.Rmatrix = m3.xRotate(this.Rmatrix, r[0])
+        this.Rmatrix = m3.yRotate(this.Rmatrix, r[1])
+        this.Rmatrix = m3.zRotate(this.Rmatrix, r[2])
 
         this.RmatrixInverse = m3.transpose(this.Rmatrix)
     }
@@ -49,39 +48,40 @@ class Box extends EventEmitter{
         this.RmatrixInverse = m3.transpose(matrix)
     }
     support(dir){
-        const _dir = m3.transformPoint(this.RmatrixInverse, dir.toArray())
+        const _dir = m3.transformPoint(this.RmatrixInverse, dir)
         
-        const res = new Vector(0,0,0)
+        const res = [0, 0, 0]
         
-        res[0]= _dir[0] > 0 ? this.max.x : this.min.x
-        res[1] = _dir[1] > 0 ? this.max.y : this.min.y
-        res[2] = _dir[2] > 0 ? this.max.z : this.min.z
+        res[0]= _dir[0] > 0 ? this.max[0] : this.min[0]
+        res[1] = _dir[1] > 0 ? this.max[1] : this.min[1]
+        res[2] = _dir[2] > 0 ? this.max[2] : this.min[2]
         
-        const sup = new Vector(...m4.transformPoint(this.getM4(), res))
-        this.emit('sup', sup,dir)
+        const sup = m4.transformPoint(this.getM4(), res)
+        
         return sup
   
     }
     getInverseInertiaTensor(mass){
-        const i1 = mass/12 * (this.max.y * this.max.y + this.max.z * this.max.z)
-        const i2 = mass / 12 *(this.max.x * this.max.x + this.max.z * this.max.z)
-        const i3 = mass / 12 *(this.max.x * this.max.x + this.max.y * this.max.y)
+        const i1 = mass/12 * (this.max[1] * this.max[1] + this.max[2] * this.max[2])
+        const i2 = mass / 12 *(this.max[0] * this.max[0] + this.max[2] * this.max[2])
+        const i3 = mass / 12 *(this.max[0] * this.max[0] + this.max[1] * this.max[1])
         
         const m = new Float32Array([1/i1, 0, 0, 0, 1/i2, 0, 0, 0, 1/i3])
         
-        return m3.multiply(this.Rmatrix,(m3.multiply(this.RmatrixInverse,m)))
+        return m3.multiply(m3.multiply(this.Rmatrix,m), this.RmatrixInverse)
 
     }
     getM4(){
         const m = m4.m3Tom4(this.Rmatrix)
-        m[12] = this.pos.x
-        m[13] = this.pos.y
-        m[14] = this.pos.z
+        m[12] = this.pos[0]
+        m[13] = this.pos[1]
+        m[14] = this.pos[2]
         m[15] = 1
         return m
     }
-    test(){
-        return dirs.map(d =>this.support(d).toArray())
+    localToGlobal(v){
+        let global = m3.transformPoint(this.Rmatrix, v)
+        return sum(this.pos, global)
     }
 }
 
